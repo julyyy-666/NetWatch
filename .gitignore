@@ -1,0 +1,15 @@
+.DS_Store
+*.swp
+*.swo
+*~
+.env
+build/
+NetWatch.app/
+__pycache__/
+*.pyc
+logs/
+*.jsonl
+状态.json
+风险评估.json
+代理位置历史.jsonl
+当前状态.txt
