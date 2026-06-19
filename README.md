@@ -1,14 +1,14 @@
 # NetWatch · 网络体检
 
-> macOS 原生网络监控 + 翻墙安全检测 + ChatGPT/Claude 封禁风险评估
+> macOS 原生网络监控 + 代理安全检测 + ChatGPT/Claude 封禁风险评估
 
-一个 24 小时挂在后台的 macOS 网络监控工具。每分钟给你的网络体检一次，断了自动弹通知告诉你"哪个环节坏了"。还能检测你的翻墙 IP 是不是容易被 ChatGPT/Claude 封号。
+一个 24 小时挂在后台的 macOS 网络监控工具。每分钟给你的网络体检一次，断了自动弹通知告诉你"哪个环节坏了"。还能检测你的代理 IP 是不是容易被 ChatGPT/Claude 风控。
 
 ## ✨ 功能
 
 ### 🏠 网络健康监控
-- **分层故障定位**：路由器 → 国内网站 → 翻墙软件 → 代理通道 → 国外网站，哪一层断了都告诉你
-- **自动识别翻墙软件**：Surge / Shadowrocket / Clash Verge / ClashX / V2RayX / sing-box
+- **分层故障定位**：路由器 → 国内网站 → 代理软件 → 代理通道 → 国外网站，哪一层断了都告诉你
+- **自动识别代理软件**：Surge / Shadowrocket / Clash Verge / ClashX / V2RayX / sing-box
 - **系统代理检测**：自动读取 macOS 系统代理设置
 - **24 小时时间线**：绿=通 红=断，一眼看出哪天哪个时段网络不稳
 - **macOS 通知**：网络断了或恢复时自动弹通知
@@ -22,7 +22,7 @@
   - [GreyNoise](https://www.greynoise.io) — 已知安全 / 已知恶意分类
 - **被风控概率**：基于 IP 纯净度反算 + A/B 分层判决（硬信号 vs 软异常）
 - **API 可达性测试**：直接请求 OpenAI / Anthropic / Google AI 端点
-- **代理位置历史**：记录你翻墙后每次的出口地点。频繁换地点 → 风控警告 ⚠️
+- **代理位置历史**：记录每次代理出口地点。频繁换地点 → 风控警告 ⚠️
 
 ### 🎨 设计
 - 原生 SwiftUI，Apple 浅色风格
@@ -86,7 +86,7 @@ launchctl load ~/Library/LaunchAgents/com.jianlin.netwatch.risk.plist
 | `main.swift` | SwiftUI GUI 应用源码 |
 | `netwatch.sh` | 每分钟网络分层探测脚本 |
 | `risk_check.sh` | 每 10 分钟安全风险评估脚本 |
-| `proxy_detect.sh` | 翻墙软件自动识别脚本 |
+| `proxy_detect.sh` | 代理软件自动识别脚本 |
 | `com.jianlin.netwatch.plist` | 网络监控 LaunchAgent |
 | `com.jianlin.netwatch.risk.plist` | 风险评估 LaunchAgent |
 
@@ -104,7 +104,7 @@ SLOW_MS=3000            # 国外慢于此 = 疑似限速
 
 - macOS 13.0+（Ventura 及以上）
 - Apple Silicon（arm64）
-- 已安装翻墙软件（Surge / Clash / Shadowrocket 等）
+- 已安装代理软件（Surge / Clash / Shadowrocket 等）
 
 ## 📜 License
 

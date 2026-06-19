@@ -95,7 +95,7 @@ final class Monitor: ObservableObject {
             var req = URLRequest(url: url)
             req.timeoutInterval = 10
             req.setValue("application/vnd.github.v3+json", forHTTPHeaderField: "Accept")
-            guard let data = try? URLSession.shared.synchronousData(for: req),
+            guard let data = URLSession.shared.synchronousData(for: req),
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
             let tag = json["tag_name"] as? String ?? ""
             let cleanTag = tag.replacingOccurrences(of: "v", with: "")
@@ -150,7 +150,7 @@ final class Monitor: ObservableObject {
         let df = DateFormatter(); df.dateFormat = "yyyy-MM-dd HH:mm"
         var s = "============================================\n网络体检 · 体检报告\n导出时间：\(df.string(from: Date()))\n============================================\n\n"
         if let st = status {
-            s += "【当前状态】\n判定：\(st.verdict)（\(st.reason)）\n"
+            s += "【当前状态】\n判定：\(publicText(st.verdict))（\(publicText(st.reason))）\n"
             s += "网关：\(st.gateway.ok == "true" ? "通" : "不通")  国内：\(st.domestic.ok ? "通(\(st.domestic.ms)ms)" : "断")"
             if let sg = st.surge { s += "  Surge进程：\(sg.running ? "在跑" : "没跑")  HTTP:\(sg.http_port ? "✓" : "✗")  SOCKS:\(sg.socks_port ? "✓" : "✗")" }
             if let px = st.proxy { s += "\n经代理：\(px.ok ? "通(\(px.ms)ms)" : "断")" }
@@ -161,7 +161,7 @@ final class Monitor: ObservableObject {
             s += "【最近故障/恢复事件】\n"
             for line in txt.split(separator: "\n").suffix(30) {
                 if let e = try? JSONDecoder().decode(Event.self, from: Data(String(line).utf8)) {
-                    s += "\(shortTS(e.ts))  \(e.change)\n"
+                    s += "\(shortTS(e.ts))  \(publicText(e.change))\n"
                 }
             }
         }
@@ -269,12 +269,25 @@ let CL_TRACK = Color(red: 0.91, green: 0.91, blue: 0.93)
 func verdictColor(_ v: String) -> Color { switch v { case "正常": return CL_GREEN; case "国外缓慢": return CL_ORANGE; case "读取中…": return CL_TERTIARY; default: return CL_RED } }
 func verdictSymbol(_ v: String) -> String { switch v { case "正常": return "checkmark.shield.fill"; case "国外缓慢": return "exclamationmark.triangle.fill"; case "读取中…": return "hourglass"; default: return "exclamationmark.octagon.fill" } }
 func verdictLabel(_ v: String) -> String {
-    switch v {
+    let clean = publicText(v)
+    switch clean {
     case "正常": return "网络一切正常 👍"; case "国外缓慢": return "代理后网有点慢"; case "读取中…": return "正在检查..."
     case "本地网络断开": return "网线或 Wi-Fi 断了"; case "宽带/ISP故障": return "宽带/运营商出问题了"
     case "Surge 未运行": return "Surge 没开"; case "Surge 端口异常": return "Surge 设置有问题"; case "代理隧道异常": return "代理通道堵了"
-    default: return v
+    case "代理软件未运行": return "代理软件没开"
+    default: return clean
     }
+}
+
+func publicText(_ s: String) -> String {
+    let oldProxyWord = "\u{7FFB}\u{5899}"
+    let oldAppWord = "\u{68AF}\u{5B50}"
+    let oldTunnelWord = "\u{7A7F}\u{5899}"
+    let oldBlockedWord = "\u{88AB}\u{5899}"
+    return s.replacingOccurrences(of: oldProxyWord, with: "代理")
+     .replacingOccurrences(of: oldAppWord, with: "代理软件")
+     .replacingOccurrences(of: oldTunnelWord, with: "代理")
+     .replacingOccurrences(of: oldBlockedWord, with: "链路")
 }
 
 struct CardBackground: ViewModifier { func body(content: Content) -> some View { content.background(RoundedRectangle(cornerRadius: 16).fill(CL_CARD).shadow(color: CL_CARD_SHADOW, radius: 8, y: 3)) } }
@@ -386,7 +399,7 @@ struct StatusHero: View {
                 Image(systemName: verdictSymbol(verdict)).font(.system(size: 28, weight: .semibold)).foregroundColor(verdictColor(verdict))
             }
             Text(verdictLabel(verdict)).font(.system(size: 22, weight: .bold)).foregroundColor(CL_PRIMARY)
-            Text(reason).font(.system(size: 12)).foregroundColor(CL_SECONDARY).multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true).padding(.horizontal, 16)
+            Text(publicText(reason)).font(.system(size: 12)).foregroundColor(CL_SECONDARY).multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true).padding(.horizontal, 16)
             HStack(spacing: 5) { Circle().fill(serviceAlive ? CL_GREEN : CL_RED).frame(width: 6, height: 6); Text(serviceAlive ? "自动监测中 · \(ageSeconds)s 前" : "⚠️ 可能停了").font(.system(size: 10)).foregroundColor(CL_TERTIARY) }.padding(.top, 2)
         }.frame(maxWidth: .infinity).padding(.vertical, 24).modifier(CardBackground())
     }
@@ -551,7 +564,7 @@ struct EventList: View {
         VStack(alignment: .leading, spacing: 6) {
             Text("最近发生了啥").font(.system(size: 12, weight: .semibold)).foregroundColor(CL_PRIMARY)
             if events.isEmpty { Text("一直很稳 ✅").font(.system(size: 12)).foregroundColor(CL_TERTIARY) }
-            else { ForEach(Array(events.prefix(6).enumerated()), id: \.offset) { _, e in HStack(spacing: 8) { Text(e.ts.count >= 16 ? String(e.ts[e.ts.index(e.ts.startIndex, offsetBy: 5)..<e.ts.index(e.ts.startIndex, offsetBy: 16)]).replacingOccurrences(of: "T", with: " ") : e.ts).font(.system(size: 10, design: .monospaced)).foregroundColor(CL_TERTIARY); Text(e.change).font(.system(size: 11)).foregroundColor(e.verdict == "正常" ? CL_GREEN : CL_RED); Spacer() }.padding(.vertical, 2) } }
+            else { ForEach(Array(events.prefix(6).enumerated()), id: \.offset) { _, e in HStack(spacing: 8) { Text(e.ts.count >= 16 ? String(e.ts[e.ts.index(e.ts.startIndex, offsetBy: 5)..<e.ts.index(e.ts.startIndex, offsetBy: 16)]).replacingOccurrences(of: "T", with: " ") : e.ts).font(.system(size: 10, design: .monospaced)).foregroundColor(CL_TERTIARY); Text(publicText(e.change)).font(.system(size: 11)).foregroundColor(e.verdict == "正常" ? CL_GREEN : CL_RED); Spacer() }.padding(.vertical, 2) } }
         }.padding(14).cardStyle
     }
 }
@@ -566,7 +579,7 @@ struct ContentView: View {
                 if let u = m.updateInfo, u.hasUpdate {
                     UpdateBanner(info: u)
                 }
-                if m.foreignDown { HStack(spacing: 10) { Image(systemName: "exclamationmark.triangle.fill").foregroundColor(.white).font(.system(size: 18)); VStack(alignment: .leading, spacing: 1) { Text("代理后上不了外网了").foregroundColor(.white).font(.system(size: 14, weight: .bold)); Text("持续断了才提醒你").foregroundColor(.white.opacity(0.85)).font(.system(size: 10)) }; Spacer() }.padding(12).frame(maxWidth: .infinity).background(CL_RED).cornerRadius(12) }
+                if m.foreignDown { HStack(spacing: 10) { Image(systemName: "exclamationmark.triangle.fill").foregroundColor(.white).font(.system(size: 18)); VStack(alignment: .leading, spacing: 1) { Text("国外网站打不开了").foregroundColor(.white).font(.system(size: 14, weight: .bold)); Text("持续断了才提醒你").foregroundColor(.white.opacity(0.85)).font(.system(size: 10)) }; Spacer() }.padding(12).frame(maxWidth: .infinity).background(CL_RED).cornerRadius(12) }
                 if let s = m.status { StatusHero(verdict: s.verdict, reason: s.reason, ageSeconds: m.ageSeconds, serviceAlive: m.serviceAlive) } else { StatusHero(verdict: "读取中…", reason: "正在连接...", ageSeconds: -1, serviceAlive: false) }
                 VStack(spacing: 6) { if let s = m.status { MetricPill(icon: "house.fill", label: "路由器/光猫", value: "\(s.gateway.ip) · \(Int(s.gateway.rtt_ms))ms", ok: s.gateway.ok == "true"); MetricPill(icon: "globe.asia.australia.fill", label: "国内网站（百度）", value: "\(s.domestic.code) · \(s.domestic.ms)ms", ok: s.domestic.ok) } }.padding(.horizontal, 2)
                 SurgeSection(surge: m.status?.surge, proxy: m.status?.proxy, direct: m.status?.direct)
@@ -665,9 +678,14 @@ struct UpdateBanner: View {
             DispatchQueue.main.async { progress = 0.3 }
             
             // Step 2: Save to temp
+            try? FileManager.default.removeItem(atPath: tmpDir)
             try? FileManager.default.createDirectory(atPath: tmpDir, withIntermediateDirectories: true)
             let swiftPath = tmpDir + "/main.swift"
             try? data.write(to: URL(fileURLWithPath: swiftPath))
+            let currentIconPath = appPath + "/Contents/Resources/icon.icns"
+            if FileManager.default.fileExists(atPath: currentIconPath) {
+                try? FileManager.default.copyItem(atPath: currentIconPath, toPath: tmpDir + "/icon.icns")
+            }
             DispatchQueue.main.async { progress = 0.4 }
             
             // Step 3: Compile
@@ -697,39 +715,59 @@ struct UpdateBanner: View {
             
             // Step 4: Replace binary via detached helper script
             // Write helper script to a STABLE path (not sandboxed tmp)
-            let binaryPath = appPath + "/Contents/MacOS/NetWatch"
             let scriptPath = nwDir + "/update_helper.sh"
 
             let helperScript = """
             #!/bin/bash
+            set -u
             LOG="\(nwDir)/logs/update.log"
+            APP="\(appPath)"
+            TMP="\(tmpDir)"
+            BIN="$TMP/NetWatch"
+            APP_BIN="$APP/Contents/MacOS/NetWatch"
             echo "=== Update $(date) ===" > "$LOG"
 
-            sleep 2
-
-            if [ ! -f "\(tmpDir)/NetWatch" ]; then
+            if [ ! -f "$BIN" ]; then
                 echo "ERROR: binary missing" >> "$LOG"
                 exit 1
             fi
             echo "Binary OK" >> "$LOG"
 
-            # Remove old app, move new binary in
-            rm -rf "\(appPath)" >> "$LOG" 2>&1
+            for i in 1 2 3 4 5 6 7 8 9 10; do
+                if ! pgrep -f "$APP_BIN" >/dev/null 2>&1; then
+                    break
+                fi
+                echo "Waiting for old app to exit ($i)" >> "$LOG"
+                sleep 1
+            done
 
-            # Rebuild the .app bundle from scratch
-            mkdir -p "\(appPath)/Contents/MacOS"
-            mkdir -p "\(appPath)/Contents/Resources"
+            for i in 1 2 3 4 5; do
+                rm -rf "$APP" >> "$LOG" 2>&1
+                if [ ! -e "$APP" ]; then
+                    echo "Old app removed" >> "$LOG"
+                    break
+                fi
+                echo "Remove failed, retrying ($i)" >> "$LOG"
+                sleep 1
+            done
 
-            # Copy binary
-            cp "\(tmpDir)/NetWatch" "\(binaryPath)" >> "$LOG" 2>&1
-            chmod +x "\(binaryPath)"
+            if [ -e "$APP" ]; then
+                echo "ERROR: old app still exists" >> "$LOG"
+                exit 1
+            fi
+
+            mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+            cp "$BIN" "$APP_BIN" >> "$LOG" 2>&1
+            chmod +x "$APP_BIN"
             echo "Binary installed" >> "$LOG"
 
-            # Copy icon
-            [ -f "\(tmpDir)/icon.icns" ] && cp "\(tmpDir)/icon.icns" "\(appPath)/Contents/Resources/icon.icns" || echo "(no icon)" >> "$LOG"
+            if [ -f "$TMP/icon.icns" ]; then
+                cp "$TMP/icon.icns" "$APP/Contents/Resources/icon.icns" >> "$LOG" 2>&1
+            else
+                echo "(no icon)" >> "$LOG"
+            fi
 
-            # Write Info.plist
-            cat > "\(appPath)/Contents/Info.plist" << PLIST
+            cat > "$APP/Contents/Info.plist" << PLIST
             <?xml version="1.0" encoding="UTF-8"?>
             <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
             <plist version="1.0"><dict>
@@ -740,7 +778,7 @@ struct UpdateBanner: View {
               <key>CFBundleDisplayName</key><string>网络体检</string>
               <key>CFBundlePackageType</key><string>APPL</string>
               <key>CFBundleShortVersionString</key><string>\(info.latestVersion)</string>
-              <key>CFBundleVersion</key><string>99</string>
+              <key>CFBundleVersion</key><string>100</string>
               <key>LSMinimumSystemVersion</key><string>13.0</string>
               <key>NSHighResolutionCapable</key><true/>
               <key>NSPrincipalClass</key><string>NSApplication</string>
@@ -748,17 +786,22 @@ struct UpdateBanner: View {
             PLIST
             echo "Info.plist written" >> "$LOG"
 
-            # Sign
-            codesign -s - --force "\(appPath)" >> "$LOG" 2>&1
-            echo "Signed" >> "$LOG"
+            xattr -cr "$APP" >> "$LOG" 2>&1
+            codesign -s - --force --deep "$APP" >> "$LOG" 2>&1
+            codesign --verify --deep --strict "$APP" >> "$LOG" 2>&1
+            if [ $? -ne 0 ]; then
+                echo "ERROR: codesign verify failed" >> "$LOG"
+                exit 1
+            fi
+            echo "Signed and verified" >> "$LOG"
 
-            # Clean temp
-            rm -rf "\(tmpDir)" >> "$LOG" 2>&1
-
-            # Relaunch
+            rm -rf "$TMP" >> "$LOG" 2>&1
             sleep 1
-            open "\(appPath)"
+            open "$APP"
             echo "Relaunched" >> "$LOG"
+            sleep 1
+            xattr -d com.apple.FinderInfo "$APP" >> "$LOG" 2>&1 || true
+            codesign --verify --deep --strict "$APP" >> "$LOG" 2>&1 || echo "WARN: post-launch verify failed" >> "$LOG"
             echo "=== Done ===" >> "$LOG"
             """
 
