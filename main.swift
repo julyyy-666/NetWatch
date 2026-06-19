@@ -692,50 +692,51 @@ struct UpdateBanner: View {
             }
             DispatchQueue.main.async { progress = 0.75 }
             
-            // Step 4: Replace binary
+            // Step 4: Replace binary via detached helper script
             let binaryPath = appPath + "/Contents/MacOS/NetWatch"
-            // Kill old app
-            let killTask = Process()
-            killTask.executableURL = URL(fileURLWithPath: "/usr/bin/pkill")
-            killTask.arguments = ["-f", "NetWatch"]
-            try? killTask.run()
-            killTask.waitUntilExit()
-            Thread.sleep(forTimeInterval: 1)
-            DispatchQueue.main.async { progress = 0.85 }
-            
-            // Copy new binary
-            try? FileManager.default.removeItem(atPath: binaryPath)
-            try? FileManager.default.copyItem(atPath: tmpDir + "/NetWatch", toPath: binaryPath)
-            
-            // Re-sign
+            // (app can't restart itself after being killed, so we spawn a helper)
+            let helperScript = """
+            #!/bin/bash
+            sleep 1
+            # Replace binary
+            cp "\(tmpDir)/NetWatch" "\(binaryPath)"
+            # Re-sign
+            codesign -s - --force "\(appPath)" 2>/dev/null
+            # Copy icon if exists
+            [ -f "\(tmpDir)/icon.icns" ] && cp "\(tmpDir)/icon.icns" "\(appPath)/Contents/Resources/icon.icns" 2>/dev/null
+            # Clear quarantine
+            xattr -cr "\(appPath)" 2>/dev/null
+            # Clean temp
+            rm -rf "\(tmpDir)"
+            # Relaunch
+            sleep 0.5
+            open "\(appPath)"
+            """
+            let scriptPath = tmpDir + "/update_helper.sh"
+            try? helperScript.write(toFile: scriptPath, atomically: true, encoding: .utf8)
+            try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptPath)
+
             DispatchQueue.main.async { progress = 0.9 }
-            let signTask = Process()
-            signTask.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
-            signTask.arguments = ["-s", "-", "--force", appPath]
-            try? signTask.run()
-            signTask.waitUntilExit()
-            
-            // Copy icon if exists
-            let iconPath = tmpDir + "/icon.icns"
-            if FileManager.default.fileExists(atPath: iconPath) {
-                try? FileManager.default.copyItem(atPath: iconPath, toPath: appPath + "/Contents/Resources/icon.icns")
-            }
-            
-            // Clean temp
-            try? FileManager.default.removeItem(atPath: tmpDir)
-            
+
+            // Launch helper as fully detached process, then kill self
+            let helperTask = Process()
+            helperTask.executableURL = URL(fileURLWithPath: "/bin/bash")
+            helperTask.arguments = [scriptPath]
+            helperTask.standardInput = FileHandle(forReadingAtPath: "/dev/null")
+            helperTask.standardOutput = FileHandle(forWritingAtPath: "/dev/null")
+            helperTask.standardError = FileHandle(forWritingAtPath: "/dev/null")
+            try? helperTask.run()
+            // Detach: don't wait — let it survive our death
+
             DispatchQueue.main.async {
                 progress = 1.0
                 done = true
                 downloading = false
             }
-            
-            // Step 5: Relaunch
-            Thread.sleep(forTimeInterval: 1.5)
-            let openTask = Process()
-            openTask.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-            openTask.arguments = [appPath]
-            try? openTask.run()
+
+            // Kill self — helper script will relaunch us
+            Thread.sleep(forTimeInterval: 0.3)
+            exit(0)
         }
     }
 }
