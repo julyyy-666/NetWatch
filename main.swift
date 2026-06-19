@@ -693,40 +693,73 @@ struct UpdateBanner: View {
             DispatchQueue.main.async { progress = 0.75 }
             
             // Step 4: Replace binary via detached helper script
+            // Write helper script to a STABLE path (not sandboxed tmp)
             let binaryPath = appPath + "/Contents/MacOS/NetWatch"
-            // (app can't restart itself after being killed, so we spawn a helper)
+            let scriptPath = nwDir + "/update_helper.sh"
+
             let helperScript = """
             #!/bin/bash
-            sleep 1
+            LOG="\(nwDir)/logs/update.log"
+            echo "=== Update started $(date) ===" > "$LOG"
+            echo "tmpDir: \(tmpDir)" >> "$LOG"
+            echo "binaryPath: \(binaryPath)" >> "$LOG"
+            echo "appPath: \(appPath)" >> "$LOG"
+
+            # Wait for old app to die
+            sleep 2
+
+            # Check compiled binary exists
+            if [ ! -f "\(tmpDir)/NetWatch" ]; then
+                echo "ERROR: compiled binary not found" >> "$LOG"
+                exit 1
+            fi
+            echo "Compiled binary OK ($(ls -la \(tmpDir)/NetWatch))" >> "$LOG"
+
             # Replace binary
-            cp "\(tmpDir)/NetWatch" "\(binaryPath)"
+            cp "\(tmpDir)/NetWatch" "\(binaryPath)" >> "$LOG" 2>&1
+            echo "Binary replaced" >> "$LOG"
+
             # Re-sign
-            codesign -s - --force "\(appPath)" 2>/dev/null
-            # Copy icon if exists
-            [ -f "\(tmpDir)/icon.icns" ] && cp "\(tmpDir)/icon.icns" "\(appPath)/Contents/Resources/icon.icns" 2>/dev/null
+            codesign -s - --force "\(appPath)" >> "$LOG" 2>&1
+            echo "Re-signed" >> "$LOG"
+
             # Clear quarantine
-            xattr -cr "\(appPath)" 2>/dev/null
+            xattr -cr "\(appPath)" >> "$LOG" 2>&1
+
+            # Update version
+            defaults write "\(appPath)/Contents/Info" CFBundleShortVersionString "\(info.latestVersion)" >> "$LOG" 2>&1
+
+            # Copy icon if exists
+            [ -f "\(tmpDir)/icon.icns" ] && cp "\(tmpDir)/icon.icns" "\(appPath)/Contents/Resources/icon.icns" >> "$LOG" 2>&1
+
             # Clean temp
-            rm -rf "\(tmpDir)"
+            rm -rf "\(tmpDir)" >> "$LOG" 2>&1
+            echo "Cleaned temp" >> "$LOG"
+
             # Relaunch
-            sleep 0.5
+            sleep 1
             open "\(appPath)"
+            echo "Relaunched" >> "$LOG"
+            echo "=== Update complete ===" >> "$LOG"
             """
-            let scriptPath = tmpDir + "/update_helper.sh"
+
             try? helperScript.write(toFile: scriptPath, atomically: true, encoding: .utf8)
             try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptPath)
 
             DispatchQueue.main.async { progress = 0.9 }
 
-            // Launch helper as fully detached process, then kill self
-            let helperTask = Process()
-            helperTask.executableURL = URL(fileURLWithPath: "/bin/bash")
-            helperTask.arguments = [scriptPath]
-            helperTask.standardInput = FileHandle(forReadingAtPath: "/dev/null")
-            helperTask.standardOutput = FileHandle(forWritingAtPath: "/dev/null")
-            helperTask.standardError = FileHandle(forWritingAtPath: "/dev/null")
-            try? helperTask.run()
-            // Detach: don't wait — let it survive our death
+            // Launch helper with nohup via /usr/bin/open or via a fully detached launchd submit
+            // Using /bin/sh -c "nohup bash script &" ensures it survives parent death
+            let launcher = Process()
+            launcher.executableURL = URL(fileURLWithPath: "/bin/sh")
+            launcher.arguments = ["-c", "nohup bash '\(scriptPath)' &"]
+            // Critical: redirect ALL file descriptors so shell doesn't inherit our pipes
+            let devnull = FileHandle(forWritingAtPath: "/dev/null")
+            launcher.standardInput = devnull
+            launcher.standardOutput = devnull
+            launcher.standardError = devnull
+            try? launcher.run()
+            // Don't wait — it's detached via nohup
 
             DispatchQueue.main.async {
                 progress = 1.0
@@ -734,9 +767,12 @@ struct UpdateBanner: View {
                 downloading = false
             }
 
-            // Kill self — helper script will relaunch us
-            Thread.sleep(forTimeInterval: 0.3)
-            exit(0)
+            // Kill self on MAIN thread (exit() is unsafe off-main)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                NSApp.terminate(nil)
+            }
+            // Block this thread so we don't continue executing after scheduling termination
+            Thread.sleep(forTimeInterval: 2)
         }
     }
 }
