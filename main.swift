@@ -69,13 +69,45 @@ final class Monitor: ObservableObject {
     @Published var directLatencyHistory: [Int] = []
     @Published var riskData: SimpleRisk?
     @Published var simpleRisk: SimpleRisk?
+    @Published var updateInfo: UpdateInfo?
     private var downSince: Date?
     private var timer: Timer?
+    private var updateTimer: Timer?
     private let base = NSHomeDirectory() + "/Library/Application Support/NetWatch"
+    private let currentVersion = "4.0"
+    private let repoOwner = "julyyy-666"
+    private let repoName = "NetWatch"
 
     func start() {
         refresh()
         timer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in self?.refresh() }
+        checkForUpdates()
+        updateTimer = Timer.scheduledTimer(withTimeInterval: 3600, repeats: true) { [weak self] _ in self?.checkForUpdates() }
+    }
+
+    func checkForUpdates() {
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            guard let self = self else { return }
+            let url = URL(string: "https://api.github.com/repos/\(self.repoOwner)/\(self.repoName)/releases/latest")!
+            var req = URLRequest(url: url)
+            req.timeoutInterval = 10
+            req.setValue("application/vnd.github.v3+json", forHTTPHeaderField: "Accept")
+            guard let data = try? URLSession.shared.synchronousData(for: req),
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
+            let tag = json["tag_name"] as? String ?? ""
+            let cleanTag = tag.replacingOccurrences(of: "v", with: "")
+            let name = json["name"] as? String ?? tag
+            let htmlUrl = json["html_url"] as? String ?? ""
+            let body = json["body"] as? String ?? ""
+            let hasUpdate = cleanTag.compare(self.currentVersion, options: .numeric) == .orderedDescending
+            DispatchQueue.main.async {
+                self.updateInfo = UpdateInfo(
+                    latestVersion: cleanTag, currentVersion: self.currentVersion,
+                    hasUpdate: hasUpdate, releaseName: name, releaseUrl: htmlUrl,
+                    releaseNotes: body, tag: tag
+                )
+            }
+        }
     }
 
     func refresh() {
@@ -244,6 +276,26 @@ func verdictLabel(_ v: String) -> String {
 
 struct CardBackground: ViewModifier { func body(content: Content) -> some View { content.background(RoundedRectangle(cornerRadius: 16).fill(CL_CARD).shadow(color: CL_CARD_SHADOW, radius: 8, y: 3)) } }
 extension View { var cardStyle: some View { modifier(CardBackground()) } }
+
+// MARK: - 更新检查
+struct UpdateInfo {
+    var latestVersion: String; var currentVersion: String; var hasUpdate: Bool
+    var releaseName: String; var releaseUrl: String; var releaseNotes: String; var tag: String
+}
+
+extension URLSession {
+    func synchronousData(for request: URLRequest) -> Data? {
+        var result: Data?
+        let semaphore = DispatchSemaphore(value: 0)
+        let task = self.dataTask(with: request) { data, _, _ in
+            result = data
+            semaphore.signal()
+        }
+        task.resume()
+        _ = semaphore.wait(timeout: .now() + 15)
+        return result
+    }
+}
 
 // MARK: - 简化数据模型
 struct SimpleRisk: Codable {
@@ -507,6 +559,10 @@ struct ContentView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 12) {
+                // 更新提示
+                if let u = m.updateInfo, u.hasUpdate {
+                    UpdateBanner(info: u)
+                }
                 if m.foreignDown { HStack(spacing: 10) { Image(systemName: "exclamationmark.triangle.fill").foregroundColor(.white).font(.system(size: 18)); VStack(alignment: .leading, spacing: 1) { Text("翻墙后上不了外网了").foregroundColor(.white).font(.system(size: 14, weight: .bold)); Text("持续断了才提醒你").foregroundColor(.white.opacity(0.85)).font(.system(size: 10)) }; Spacer() }.padding(12).frame(maxWidth: .infinity).background(CL_RED).cornerRadius(12) }
                 if let s = m.status { StatusHero(verdict: s.verdict, reason: s.reason, ageSeconds: m.ageSeconds, serviceAlive: m.serviceAlive) } else { StatusHero(verdict: "读取中…", reason: "正在连接...", ageSeconds: -1, serviceAlive: false) }
                 VStack(spacing: 6) { if let s = m.status { MetricPill(icon: "house.fill", label: "路由器/光猫", value: "\(s.gateway.ip) · \(Int(s.gateway.rtt_ms))ms", ok: s.gateway.ok == "true"); MetricPill(icon: "globe.asia.australia.fill", label: "国内网站（百度）", value: "\(s.domestic.code) · \(s.domestic.ms)ms", ok: s.domestic.ok) } }.padding(.horizontal, 2)
@@ -516,9 +572,55 @@ struct ContentView: View {
                 QualityPanel(status: m.status, trend: m.trend)
                 RiskSection(m: m)
                 EventList(events: m.events)
-                VStack(spacing: 2) { Text("网络体检 · 每分钟自动检查 · 24h 值班").font(.system(size: 9)).foregroundColor(CL_TERTIARY); Text("上次: \(m.lastLoad)").font(.system(size: 8)).foregroundColor(CL_TERTIARY) }.padding(.top, 2)
+                // 一键复制给 AI
+                Button(action: {
+                    DispatchQueue.global(qos: .userInitiated).async {
+                        let report = m.diagnosticReport()
+                        DispatchQueue.main.async {
+                            let pb = NSPasteboard.general
+                            pb.clearContents(); pb.setString(report, forType: .string)
+                            withAnimation { copied = true }
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { withAnimation { copied = false } }
+                        }
+                    }
+                }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: copied ? "checkmark.circle.fill" : "brain.head.profile")
+                        Text(copied ? "已复制！去 ChatGPT/Claude 粘贴即可" : "复制给 AI 分析")
+                    }.font(.system(size: 12, weight: .medium))
+                    .foregroundColor(copied ? .white : CL_ACCENT)
+                    .frame(maxWidth: .infinity).padding(.vertical, 10)
+                    .background(copied ? CL_GREEN : CL_ACCENT.opacity(0.1)).cornerRadius(10)
+                }.buttonStyle(.plain)
+                VStack(spacing: 2) {
+                    if let u = m.updateInfo { Text("当前版本 v\(u.currentVersion) · 最新 v\(u.latestVersion)").font(.system(size: 9)).foregroundColor(u.hasUpdate ? CL_ACCENT : CL_TERTIARY) }
+                    Text("网络体检 · 每分钟自动检查 · 24h 值班").font(.system(size: 9)).foregroundColor(CL_TERTIARY)
+                    Text("上次: \(m.lastLoad)").font(.system(size: 8)).foregroundColor(CL_TERTIARY)
+                }.padding(.top, 2)
             }.padding(16).frame(maxWidth: .infinity)
         }.frame(minWidth: 480, minHeight: 700).background(CL_BG)
+    }
+}
+
+struct UpdateBanner: View {
+    let info: UpdateInfo
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "arrow.up.circle.fill").foregroundColor(.white).font(.system(size: 18))
+            VStack(alignment: .leading, spacing: 1) {
+                Text("发现新版本 v\(info.latestVersion)！").foregroundColor(.white).font(.system(size: 13, weight: .bold))
+                Text("当前 v\(info.currentVersion) · 点击查看更新内容").foregroundColor(.white.opacity(0.85)).font(.system(size: 10))
+            }
+            Spacer()
+            Button(action: {
+                if let url = URL(string: info.releaseUrl) { NSWorkspace.shared.open(url) }
+            }) {
+                Text("查看").font(.system(size: 11, weight: .medium)).foregroundColor(CL_ACCENT)
+                    .padding(.horizontal, 10).padding(.vertical, 5).background(Color.white).cornerRadius(6)
+            }.buttonStyle(.plain)
+        }.padding(12).frame(maxWidth: .infinity).background(
+            LinearGradient(gradient: Gradient(colors: [Color(red: 0.0, green: 0.44, blue: 0.89), Color(red: 0.0, green: 0.33, blue: 0.7)]), startPoint: .leading, endPoint: .trailing)
+        ).cornerRadius(12)
     }
 }
 
