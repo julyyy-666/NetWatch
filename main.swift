@@ -74,7 +74,10 @@ final class Monitor: ObservableObject {
     private var timer: Timer?
     private var updateTimer: Timer?
     private let base = NSHomeDirectory() + "/Library/Application Support/NetWatch"
-    private let currentVersion = "4.0"
+    private let currentVersion: String = {
+        let v = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "4.0"
+        return v
+    }()
     private let repoOwner = "julyyy-666"
     private let repoName = "NetWatch"
 
@@ -700,47 +703,63 @@ struct UpdateBanner: View {
             let helperScript = """
             #!/bin/bash
             LOG="\(nwDir)/logs/update.log"
-            echo "=== Update started $(date) ===" > "$LOG"
-            echo "tmpDir: \(tmpDir)" >> "$LOG"
-            echo "binaryPath: \(binaryPath)" >> "$LOG"
-            echo "appPath: \(appPath)" >> "$LOG"
+            echo "=== Update $(date) ===" > "$LOG"
 
-            # Wait for old app to die
             sleep 2
 
-            # Check compiled binary exists
             if [ ! -f "\(tmpDir)/NetWatch" ]; then
-                echo "ERROR: compiled binary not found" >> "$LOG"
+                echo "ERROR: binary missing" >> "$LOG"
                 exit 1
             fi
-            echo "Compiled binary OK ($(ls -la \(tmpDir)/NetWatch))" >> "$LOG"
+            echo "Binary OK" >> "$LOG"
 
-            # Replace binary
+            # Remove old app, move new binary in
+            rm -rf "\(appPath)" >> "$LOG" 2>&1
+
+            # Rebuild the .app bundle from scratch
+            mkdir -p "\(appPath)/Contents/MacOS"
+            mkdir -p "\(appPath)/Contents/Resources"
+
+            # Copy binary
             cp "\(tmpDir)/NetWatch" "\(binaryPath)" >> "$LOG" 2>&1
-            echo "Binary replaced" >> "$LOG"
+            chmod +x "\(binaryPath)"
+            echo "Binary installed" >> "$LOG"
 
-            # Re-sign
+            # Copy icon
+            [ -f "\(tmpDir)/icon.icns" ] && cp "\(tmpDir)/icon.icns" "\(appPath)/Contents/Resources/icon.icns" || echo "(no icon)" >> "$LOG"
+
+            # Write Info.plist
+            cat > "\(appPath)/Contents/Info.plist" << PLIST
+            <?xml version="1.0" encoding="UTF-8"?>
+            <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+            <plist version="1.0"><dict>
+              <key>CFBundleExecutable</key><string>NetWatch</string>
+              <key>CFBundleIconFile</key><string>icon</string>
+              <key>CFBundleIdentifier</key><string>com.jianlin.netwatch.app</string>
+              <key>CFBundleName</key><string>网络体检</string>
+              <key>CFBundleDisplayName</key><string>网络体检</string>
+              <key>CFBundlePackageType</key><string>APPL</string>
+              <key>CFBundleShortVersionString</key><string>\(info.latestVersion)</string>
+              <key>CFBundleVersion</key><string>99</string>
+              <key>LSMinimumSystemVersion</key><string>13.0</string>
+              <key>NSHighResolutionCapable</key><true/>
+              <key>NSPrincipalClass</key><string>NSApplication</string>
+            </dict></plist>
+            PLIST
+            echo "Info.plist written" >> "$LOG"
+
+            # Sign
             codesign -s - --force "\(appPath)" >> "$LOG" 2>&1
-            echo "Re-signed" >> "$LOG"
-
-            # Clear quarantine
-            xattr -cr "\(appPath)" >> "$LOG" 2>&1
-
-            # Update version
-            defaults write "\(appPath)/Contents/Info" CFBundleShortVersionString "\(info.latestVersion)" >> "$LOG" 2>&1
-
-            # Copy icon if exists
-            [ -f "\(tmpDir)/icon.icns" ] && cp "\(tmpDir)/icon.icns" "\(appPath)/Contents/Resources/icon.icns" >> "$LOG" 2>&1
+            echo "Signed" >> "$LOG"
 
             # Clean temp
             rm -rf "\(tmpDir)" >> "$LOG" 2>&1
-            echo "Cleaned temp" >> "$LOG"
 
             # Relaunch
             sleep 1
             open "\(appPath)"
             echo "Relaunched" >> "$LOG"
-            echo "=== Update complete ===" >> "$LOG"
+            echo "=== Done ===" >> "$LOG"
             """
 
             try? helperScript.write(toFile: scriptPath, atomically: true, encoding: .utf8)
