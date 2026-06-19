@@ -604,23 +604,139 @@ struct ContentView: View {
 
 struct UpdateBanner: View {
     let info: UpdateInfo
+    @State private var downloading = false
+    @State private var progress: Double = 0
+    @State private var done = false
+    @State private var errorMsg = ""
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: "arrow.up.circle.fill").foregroundColor(.white).font(.system(size: 18))
+            Image(systemName: done ? "checkmark.circle.fill" : "arrow.up.circle.fill")
+                .foregroundColor(.white).font(.system(size: 18))
             VStack(alignment: .leading, spacing: 1) {
-                Text("发现新版本 v\(info.latestVersion)！").foregroundColor(.white).font(.system(size: 13, weight: .bold))
-                Text("当前 v\(info.currentVersion) · 点击查看更新内容").foregroundColor(.white.opacity(0.85)).font(.system(size: 10))
+                if done {
+                    Text("更新完成！正在重启...").foregroundColor(.white).font(.system(size: 13, weight: .bold))
+                } else if !errorMsg.isEmpty {
+                    Text("更新失败：\(errorMsg)").foregroundColor(.white).font(.system(size: 12, weight: .bold))
+                    Text("点「手动更新」去浏览器下载").foregroundColor(.white.opacity(0.7)).font(.system(size: 9))
+                } else if downloading {
+                    Text("正在下载更新 v\(info.latestVersion)...").foregroundColor(.white).font(.system(size: 13, weight: .bold))
+                    ProgressView(value: progress).progressViewStyle(.linear).tint(.white).frame(width: 200)
+                } else {
+                    Text("发现新版本 v\(info.latestVersion)！").foregroundColor(.white).font(.system(size: 13, weight: .bold))
+                    Text("当前 v\(info.currentVersion) · 点击自动更新").foregroundColor(.white.opacity(0.85)).font(.system(size: 10))
+                }
             }
             Spacer()
-            Button(action: {
-                if let url = URL(string: info.releaseUrl) { NSWorkspace.shared.open(url) }
-            }) {
-                Text("查看").font(.system(size: 11, weight: .medium)).foregroundColor(CL_ACCENT)
-                    .padding(.horizontal, 10).padding(.vertical, 5).background(Color.white).cornerRadius(6)
-            }.buttonStyle(.plain)
+            Button(action: { autoUpdate() }) {
+                Text(downloading ? "请稍候" : (done ? "✅" : "立即更新"))
+                    .font(.system(size: 11, weight: .medium)).foregroundColor(CL_ACCENT)
+                    .padding(.horizontal, 12).padding(.vertical, 6).background(Color.white).cornerRadius(6)
+            }.buttonStyle(.plain).disabled(downloading || done)
+            if !errorMsg.isEmpty {
+                Button(action: { if let url = URL(string: info.releaseUrl) { NSWorkspace.shared.open(url) } }) {
+                    Text("手动更新").font(.system(size: 10)).foregroundColor(.white.opacity(0.8))
+                }.buttonStyle(.plain)
+            }
         }.padding(12).frame(maxWidth: .infinity).background(
             LinearGradient(gradient: Gradient(colors: [Color(red: 0.0, green: 0.44, blue: 0.89), Color(red: 0.0, green: 0.33, blue: 0.7)]), startPoint: .leading, endPoint: .trailing)
         ).cornerRadius(12)
+    }
+
+    func autoUpdate() {
+        downloading = true
+        errorMsg = ""
+        DispatchQueue.global(qos: .userInitiated).async {
+            let home = NSHomeDirectory()
+            let nwDir = home + "/Library/Application Support/NetWatch"
+            let appPath = home + "/Desktop/网络监测.app"
+            let tmpDir = NSTemporaryDirectory() + "NetWatch-update"
+            
+            // Step 1: Download latest main.swift from GitHub
+            DispatchQueue.main.async { progress = 0.1 }
+            let rawUrl = "https://raw.githubusercontent.com/julyyy-666/NetWatch/main/main.swift"
+            guard let url = URL(string: rawUrl),
+                  let data = try? Data(contentsOf: url) else {
+                DispatchQueue.main.async { errorMsg = "下载失败"; downloading = false }
+                return
+            }
+            DispatchQueue.main.async { progress = 0.3 }
+            
+            // Step 2: Save to temp
+            try? FileManager.default.createDirectory(atPath: tmpDir, withIntermediateDirectories: true)
+            let swiftPath = tmpDir + "/main.swift"
+            try? data.write(to: URL(fileURLWithPath: swiftPath))
+            DispatchQueue.main.async { progress = 0.4 }
+            
+            // Step 3: Compile
+            DispatchQueue.main.async { progress = 0.5 }
+            let compileTask = Process()
+            compileTask.executableURL = URL(fileURLWithPath: "/usr/bin/swiftc")
+            compileTask.arguments = [
+                swiftPath, "-o", tmpDir + "/NetWatch",
+                "-framework", "SwiftUI", "-framework", "AppKit",
+                "-framework", "Combine", "-framework", "CoreFoundation", "-framework", "Foundation",
+                "-target", "arm64-apple-macos13.0"
+            ]
+            compileTask.standardOutput = FileHandle(forWritingAtPath: "/dev/null")
+            compileTask.standardError = FileHandle(forWritingAtPath: "/dev/null")
+            do {
+                try compileTask.run()
+                compileTask.waitUntilExit()
+                if compileTask.terminationStatus != 0 {
+                    DispatchQueue.main.async { errorMsg = "编译失败"; downloading = false }
+                    return
+                }
+            } catch {
+                DispatchQueue.main.async { errorMsg = "编译器错误"; downloading = false }
+                return
+            }
+            DispatchQueue.main.async { progress = 0.75 }
+            
+            // Step 4: Replace binary
+            let binaryPath = appPath + "/Contents/MacOS/NetWatch"
+            // Kill old app
+            let killTask = Process()
+            killTask.executableURL = URL(fileURLWithPath: "/usr/bin/pkill")
+            killTask.arguments = ["-f", "NetWatch"]
+            try? killTask.run()
+            killTask.waitUntilExit()
+            Thread.sleep(forTimeInterval: 1)
+            DispatchQueue.main.async { progress = 0.85 }
+            
+            // Copy new binary
+            try? FileManager.default.removeItem(atPath: binaryPath)
+            try? FileManager.default.copyItem(atPath: tmpDir + "/NetWatch", toPath: binaryPath)
+            
+            // Re-sign
+            DispatchQueue.main.async { progress = 0.9 }
+            let signTask = Process()
+            signTask.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
+            signTask.arguments = ["-s", "-", "--force", appPath]
+            try? signTask.run()
+            signTask.waitUntilExit()
+            
+            // Copy icon if exists
+            let iconPath = tmpDir + "/icon.icns"
+            if FileManager.default.fileExists(atPath: iconPath) {
+                try? FileManager.default.copyItem(atPath: iconPath, toPath: appPath + "/Contents/Resources/icon.icns")
+            }
+            
+            // Clean temp
+            try? FileManager.default.removeItem(atPath: tmpDir)
+            
+            DispatchQueue.main.async {
+                progress = 1.0
+                done = true
+                downloading = false
+            }
+            
+            // Step 5: Relaunch
+            Thread.sleep(forTimeInterval: 1.5)
+            let openTask = Process()
+            openTask.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+            openTask.arguments = [appPath]
+            try? openTask.run()
+        }
     }
 }
 
