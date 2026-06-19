@@ -119,7 +119,7 @@ elif [ "$SURGE_RUNNING" = "false" ]; then
 elif [ "$SURGE_HTTP_OK" = "false" ] && [ "$SURGE_SOCKS_OK" = "false" ]; then
   VERDICT="Surge 端口异常"; REASON="Surge 在跑但 HTTP($SURGE_HTTP_PORT)/SOCKS($SURGE_SOCKS_PORT) 端口都没在听 → 检查 Surge 配置"
 elif [ "$PROXY_OK" = "false" ]; then
-  VERDICT="翻墙隧道异常"; REASON="Surge 在听但经代理访问国外失败 → 代理节点不可用/被墙干扰"
+  VERDICT="代理隧道异常"; REASON="Surge 在听但经代理访问国外失败 → 代理节点不可用/被墙干扰"
 elif [ "$PROXY_SLOW" = "true" ]; then
   VERDICT="国外缓慢"; REASON="经 Surge 代理延迟 ${PROXY_MS}ms (阈值${SLOW_MS}ms) → 可能限速"
 else

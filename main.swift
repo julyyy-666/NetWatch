@@ -222,8 +222,8 @@ final class Monitor: ObservableObject {
         let layers: [(String, (Status) -> Bool)] = [
             ("路由器", { $0.gateway.ok == "true" }),
             ("国内网站", { $0.domestic.ok }),
-            ("翻墙软件", { $0.surge?.running ?? ($0.proxy_listen ?? false) }),
-            ("翻墙后", { $0.foreign.ok }),
+            ("代理软件", { $0.surge?.running ?? ($0.proxy_listen ?? false) }),
+            ("代理后", { $0.foreign.ok }),
         ]
         let N = 96; let cnt = s.count
         var out: [TimelineRowData] = []
@@ -270,9 +270,9 @@ func verdictColor(_ v: String) -> Color { switch v { case "正常": return CL_GR
 func verdictSymbol(_ v: String) -> String { switch v { case "正常": return "checkmark.shield.fill"; case "国外缓慢": return "exclamationmark.triangle.fill"; case "读取中…": return "hourglass"; default: return "exclamationmark.octagon.fill" } }
 func verdictLabel(_ v: String) -> String {
     switch v {
-    case "正常": return "网络一切正常 👍"; case "国外缓慢": return "翻墙后网有点慢"; case "读取中…": return "正在检查..."
+    case "正常": return "网络一切正常 👍"; case "国外缓慢": return "代理后网有点慢"; case "读取中…": return "正在检查..."
     case "本地网络断开": return "网线或 Wi-Fi 断了"; case "宽带/ISP故障": return "宽带/运营商出问题了"
-    case "Surge 未运行": return "Surge 没开"; case "Surge 端口异常": return "Surge 设置有问题"; case "翻墙隧道异常": return "翻墙通道堵了"
+    case "Surge 未运行": return "Surge 没开"; case "Surge 端口异常": return "Surge 设置有问题"; case "代理隧道异常": return "代理通道堵了"
     default: return v
     }
 }
@@ -399,9 +399,9 @@ struct SurgeSection: View {
     let surge: SurgeInfo?; let proxy: ProxyInfo?; let direct: DirectInfo?
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 6) { Image(systemName: "bolt.fill").font(.system(size: 13)).foregroundColor(CL_ACCENT); Text("翻墙软件 Surge").font(.system(size: 14, weight: .semibold)).foregroundColor(CL_PRIMARY); Spacer() }
-            HStack(spacing: 8) { MetricPill(icon: "app.fill", label: "软件开着吗", value: surge?.running == true ? "开着呢" : "没开", ok: surge?.running ?? false); MetricPill(icon: "network", label: "翻墙通道 1", value: surge?.http_port == true ? "正常" : "不通", ok: surge?.http_port ?? false) }
-            HStack(spacing: 8) { MetricPill(icon: "network", label: "翻墙通道 2", value: surge?.socks_port == true ? "正常" : "不通", ok: surge?.socks_port ?? false); MetricPill(icon: "globe", label: "能上 Google 吗", value: proxy?.ok == true ? "能 (\(proxy?.ms ?? 0)ms)" : "上不了", ok: proxy?.ok ?? false) }
+            HStack(spacing: 6) { Image(systemName: "bolt.fill").font(.system(size: 13)).foregroundColor(CL_ACCENT); Text("代理软件 Surge").font(.system(size: 14, weight: .semibold)).foregroundColor(CL_PRIMARY); Spacer() }
+            HStack(spacing: 8) { MetricPill(icon: "app.fill", label: "软件开着吗", value: surge?.running == true ? "开着呢" : "没开", ok: surge?.running ?? false); MetricPill(icon: "network", label: "代理通道 1", value: surge?.http_port == true ? "正常" : "不通", ok: surge?.http_port ?? false) }
+            HStack(spacing: 8) { MetricPill(icon: "network", label: "代理通道 2", value: surge?.socks_port == true ? "正常" : "不通", ok: surge?.socks_port ?? false); MetricPill(icon: "globe", label: "能上 Google 吗", value: proxy?.ok == true ? "能 (\(proxy?.ms ?? 0)ms)" : "上不了", ok: proxy?.ok ?? false) }
         }.padding(14).cardStyle
     }
 }
@@ -410,7 +410,7 @@ struct LatencyChart: View {
     var body: some View {
         let mx = max(max(proxyValues.max() ?? 1, directValues.max() ?? 1), 1)
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 12) { Label("走翻墙", systemImage: "circle.fill").font(.system(size: 10)).foregroundColor(CL_ACCENT); Label("不走翻墙", systemImage: "circle.fill").font(.system(size: 10)).foregroundColor(CL_TERTIARY); Spacer(); Text("越高越慢").font(.system(size: 9)).foregroundColor(CL_TERTIARY) }
+            HStack(spacing: 12) { Label("走代理", systemImage: "circle.fill").font(.system(size: 10)).foregroundColor(CL_ACCENT); Label("不走代理", systemImage: "circle.fill").font(.system(size: 10)).foregroundColor(CL_TERTIARY); Spacer(); Text("越高越慢").font(.system(size: 9)).foregroundColor(CL_TERTIARY) }
             HStack(alignment: .bottom, spacing: 1.5) { ForEach(0..<max(proxyValues.count, directValues.count, 1), id: \.self) { i in VStack(spacing: 1) { RoundedRectangle(cornerRadius: 2).fill(CL_ACCENT.opacity(0.85)).frame(width: 4, height: max(2, CGFloat(i < proxyValues.count ? proxyValues[i] : 0) / CGFloat(mx) * 50)); RoundedRectangle(cornerRadius: 2).fill(CL_TERTIARY.opacity(0.5)).frame(width: 4, height: max(2, CGFloat(i < directValues.count ? directValues[i] : 0) / CGFloat(mx) * 50)) } } }.frame(height: 52)
         }.padding(14).cardStyle
     }
@@ -432,7 +432,7 @@ struct QualityPanel: View {
         VStack(alignment: .leading, spacing: 10) {
             Text("网好不好用").font(.system(size: 13, weight: .semibold)).foregroundColor(CL_PRIMARY)
             HStack(spacing: 8) { qItem("到路由器", loss: status?.quality?.local?.loss, jitter: status?.quality?.local?.jitter, avg: status?.quality?.local?.avg); qItem("到国内网站", loss: status?.quality?.net?.loss, jitter: status?.quality?.net?.jitter, avg: status?.quality?.net?.avg) }
-            HStack(spacing: 8) { qItem("翻墙成功率", pct: foreignAvail) }
+            HStack(spacing: 8) { qItem("代理成功率", pct: foreignAvail) }
         }.padding(14).cardStyle
     }
     func qItem(_ name: String, loss: Double? = nil, jitter: Double? = nil, avg: Double? = nil, pct: Double? = nil) -> some View {
@@ -494,10 +494,10 @@ struct RiskSection: View {
                         }
                     }.padding(10).background(Color(red: 0.97, green: 0.97, blue: 0.98)).cornerRadius(8)
                 }
-                // 6. 翻墙软件
+                // 6. 代理软件
                 if let pi = r.proxy_info {
                     VStack(alignment: .leading, spacing: 6) {
-                        HStack { Text("🖥 翻墙软件").font(.system(size: 11, weight: .semibold)).foregroundColor(CL_PRIMARY); Spacer(); if !pi.active_app.isEmpty { Text("当前: \(pi.active_app)").font(.system(size: 9, weight: .medium)).foregroundColor(CL_ACCENT) } }
+                        HStack { Text("🖥 代理软件").font(.system(size: 11, weight: .semibold)).foregroundColor(CL_PRIMARY); Spacer(); if !pi.active_app.isEmpty { Text("当前: \(pi.active_app)").font(.system(size: 9, weight: .medium)).foregroundColor(CL_ACCENT) } }
                         ForEach(pi.apps, id: \.name) { app in
                             HStack(spacing: 6) {
                                 Image(systemName: app.running ? "checkmark.circle.fill" : "circle").font(.system(size: 10)).foregroundColor(app.running ? CL_GREEN : CL_TERTIARY)
@@ -566,7 +566,7 @@ struct ContentView: View {
                 if let u = m.updateInfo, u.hasUpdate {
                     UpdateBanner(info: u)
                 }
-                if m.foreignDown { HStack(spacing: 10) { Image(systemName: "exclamationmark.triangle.fill").foregroundColor(.white).font(.system(size: 18)); VStack(alignment: .leading, spacing: 1) { Text("翻墙后上不了外网了").foregroundColor(.white).font(.system(size: 14, weight: .bold)); Text("持续断了才提醒你").foregroundColor(.white.opacity(0.85)).font(.system(size: 10)) }; Spacer() }.padding(12).frame(maxWidth: .infinity).background(CL_RED).cornerRadius(12) }
+                if m.foreignDown { HStack(spacing: 10) { Image(systemName: "exclamationmark.triangle.fill").foregroundColor(.white).font(.system(size: 18)); VStack(alignment: .leading, spacing: 1) { Text("代理后上不了外网了").foregroundColor(.white).font(.system(size: 14, weight: .bold)); Text("持续断了才提醒你").foregroundColor(.white.opacity(0.85)).font(.system(size: 10)) }; Spacer() }.padding(12).frame(maxWidth: .infinity).background(CL_RED).cornerRadius(12) }
                 if let s = m.status { StatusHero(verdict: s.verdict, reason: s.reason, ageSeconds: m.ageSeconds, serviceAlive: m.serviceAlive) } else { StatusHero(verdict: "读取中…", reason: "正在连接...", ageSeconds: -1, serviceAlive: false) }
                 VStack(spacing: 6) { if let s = m.status { MetricPill(icon: "house.fill", label: "路由器/光猫", value: "\(s.gateway.ip) · \(Int(s.gateway.rtt_ms))ms", ok: s.gateway.ok == "true"); MetricPill(icon: "globe.asia.australia.fill", label: "国内网站（百度）", value: "\(s.domestic.code) · \(s.domestic.ms)ms", ok: s.domestic.ok) } }.padding(.horizontal, 2)
                 SurgeSection(surge: m.status?.surge, proxy: m.status?.proxy, direct: m.status?.direct)

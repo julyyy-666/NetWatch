@@ -1,5 +1,5 @@
 #!/bin/bash
-# NetWatch · 翻墙软件自动识别
+# NetWatch · 代理软件自动识别
 export PATH=/usr/bin:/bin:/usr/sbin:/sbin
 
 # 系统代理
