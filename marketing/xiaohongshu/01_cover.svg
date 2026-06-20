@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1620" viewBox="0 0 1080 1620">
+<defs><style>
+.bg{fill:#F2EEDF}.card{fill:rgba(255,255,255,0.70);stroke:rgba(255,255,255,.55);stroke-width:2}.ink{fill:#2A241B}.soft{fill:#5C5345}.grey{fill:#8A8275}.red{fill:#C0532E}.line{stroke:rgba(42,36,27,.18);stroke-width:1}.title{font-family:'STKaiti','Kaiti SC','Songti SC',serif;font-size:82px;font-weight:700}.huge{font-family:'STKaiti','Kaiti SC','Songti SC',serif;font-size:94px;font-weight:700}.body{font-family:'Songti SC','STSong',serif;font-size:42px}.body2{font-family:'Songti SC','STSong',serif;font-size:38px}.small{font-family:'Songti SC','STSong',serif;font-size:32px}.foot{font-family:'Songti SC','STSong',serif;font-size:28px}.mono{font-family:-apple-system,BlinkMacSystemFont,'PingFang SC',sans-serif;font-size:36px;font-weight:700}
+</style><filter id="shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="20" stdDeviation="24" flood-color="#2A241B" flood-opacity=".06"/></filter></defs>
+<rect width="1080" height="1620" class="bg"/>
+<rect x="54" y="54" width="972" height="1512" rx="54" class="card" filter="url(#shadow)"/>
+<circle cx="540" cy="378" r="18" class="red"/>
+<path d="M455 448 A122 122 0 0 1 625 448" fill="none" stroke="#C0532E" stroke-width="12" stroke-linecap="round"/>
+<path d="M410 500 A178 178 0 0 1 670 500" fill="none" stroke="#C0532E" stroke-width="12" stroke-linecap="round"/>
+<path d="M360 555 A245 245 0 0 1 720 555" fill="none" stroke="#C0532E" stroke-width="12" stroke-linecap="round"/><text x="540" y="650" text-anchor="middle" class="huge"><tspan x="540" dy="0">我用 vibe coding</tspan><tspan x="540" dy="1.25em">做了第一个</tspan><tspan x="540" dy="1.25em">Mac 小工具</tspan></text><rect x="465" y="910" width="150" height="8" rx="4" class="red"/><text x="540" y="990" text-anchor="middle" class="body soft"><tspan x="540" dy="0">它不教你看日志</tspan><tspan x="540" dy="1.25em">只告诉你：网络到底哪一层坏了</tspan></text><text x="540" y="1210" text-anchor="middle" class="small grey"><tspan x="540" dy="0">NetWatch · 网络体检</tspan><tspan x="540" dy="1.25em">v5.5 内测版</tspan></text>
+<line x1="118" y1="1478" x2="962" y2="1478" class="line"/>
+<text x="118" y="1534" text-anchor="start" class="foot red"><tspan x="118" dy="0">第一个产品</tspan></text>
+<text x="962" y="1534" text-anchor="end" class="foot grey"><tspan x="962" dy="0">@见林</tspan></text>
+</svg>
