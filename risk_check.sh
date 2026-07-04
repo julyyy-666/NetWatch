@@ -48,7 +48,7 @@ write_error() {
   "total_score": 0,
   "risk_level": "无法检测",
   "risk_emoji": "⚪",
-  "tspu_tier": "$message",
+  "risk_tier": "$message",
   "signals_major": ["$message"],
   "signals_minor": [],
   "source_ok": 0,
@@ -144,8 +144,11 @@ function sourceGood(obj) {
   return true
 }
 function apiStatus(code) {
-  if (["401", "404", "405", "400", "422"].includes(code)) return "可访问"
-  if (["403", "451", "429"].includes(code)) return "受阻"
+  // 无凭证裸探测：401/404/405/400/422 都说明网络层能通到服务，只是没鉴权——这不代表账号可用
+  if (["401", "404", "405", "400", "422"].includes(code)) return "网络可达"
+  if (code === "451") return "地区封锁"   // 唯一真正指向出口被封的信号
+  if (code === "429") return "被限流"      // 速率限制，与账号封禁无关
+  if (code === "403") return "疑似拦截"    // 多为 CDN 对无 UA/无 key 裸请求的通用拦截
   if (code === "000" || code === "") return "未确认"
   return "未知"
 }
@@ -240,11 +243,15 @@ const apiCodes = {
   anthropic: getenv("API_ANTHROPIC") || "000",
   google: getenv("API_GOOGLE") || "000"
 }
+// API 探测只反映“这个出口 IP 的网络层能否触达 AI 服务”，不等于账号会不会被封。
+// 因此只有 451（法律/地区封锁）作为较弱硬信号，429/403 不再重罚。
 const apiResults = {}
 for (const [name, code] of Object.entries(apiCodes)) {
   const status = apiStatus(code)
-  if (status === "受阻") flagMajor(`${name} API 返回限制信号 (${code})`, 30)
-  else if (status === "未确认") flagMinor(`${name} API 本次未确认`, 3)
+  if (status === "地区封锁") flagMajor(`${name} 在该出口被地区封锁 (${code})`, 15)
+  else if (status === "疑似拦截") flagMinor(`${name} 裸连接被拦 (${code})，通常是无凭证探测所致，与账号无关`, 3)
+  else if (status === "未确认") flagMinor(`${name} 本次未探测到`, 2)
+  // 网络可达 / 被限流：不扣分（限流是正常速率控制）
   apiResults[name] = {code, status}
 }
 
@@ -255,13 +262,13 @@ else if (score >= 70) { riskLevel = "中低风险"; riskEmoji = "🟢" }
 else if (score >= 50) { riskLevel = "中等风险"; riskEmoji = "🟡" }
 else if (score >= 30) { riskLevel = "较高风险"; riskEmoji = "🟠" }
 
-let tspuTier = "高风险 · 多个硬信号命中"
+let riskTier = "信誉差 · 多个硬信号命中"
 const aHits = signalsMajor.length
 const bHits = signalsMinor.length
-if (aHits === 0 && bHits === 0) tspuTier = "安全 · 各源无异常"
-else if (aHits === 0 && bHits < 3) tspuTier = "低风险 · 少量软异常"
-else if (aHits === 0) tspuTier = "监控中 · 软异常累积"
-else if (aHits === 1) tspuTier = "需关注 · 1 个硬信号"
+if (aHits === 0 && bHits === 0) riskTier = "干净 · 各源无异常"
+else if (aHits === 0 && bHits < 3) riskTier = "较干净 · 少量软异常"
+else if (aHits === 0) riskTier = "留意 · 软异常累积"
+else if (aHits === 1) riskTier = "需关注 · 1 个硬信号"
 
 const proxyIpInfo = {
   ip: getenv("PROXY_IP"),
@@ -333,7 +340,7 @@ const data = {
   total_score: score,
   risk_level: riskLevel,
   risk_emoji: riskEmoji,
-  tspu_tier: tspuTier,
+  risk_tier: riskTier,
   signals_major: signalsMajor,
   signals_minor: signalsMinor,
   a_hits: aHits,

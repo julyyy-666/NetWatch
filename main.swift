@@ -291,18 +291,23 @@ final class Monitor: ObservableObject {
 
 
 // MARK: - 颜色
-// 见林设计系统 v4 暖黄复古风（状态色保留功能性语义，但调暖）
-let CL_BG = Color(red: 0.949, green: 0.933, blue: 0.874)        // #F2EEDF 暖纸底
-let CL_CARD = Color.white.opacity(0.72)                          // 半透明白卡
-let CL_CARD_SHADOW = Color(red: 0.165, green: 0.141, blue: 0.106).opacity(0.06)
-let CL_PRIMARY = Color(red: 0.165, green: 0.141, blue: 0.106)   // #2A241B 墨黑
-let CL_SECONDARY = Color(red: 0.361, green: 0.325, blue: 0.271) // #5C5345 深灰
-let CL_TERTIARY = Color(red: 0.541, green: 0.510, blue: 0.463)  // #8A8275 灰棕
-let CL_ACCENT = Color(red: 0.753, green: 0.325, blue: 0.180)    // #C0532E 朱砂红
-let CL_GREEN = Color(red: 0.420, green: 0.478, blue: 0.227)     // #6B7A3A 暖橄榄=正常
-let CL_ORANGE = Color(red: 0.729, green: 0.459, blue: 0.090)    // #BA7517 琥珀=警告
-let CL_RED = Color(red: 0.753, green: 0.325, blue: 0.180)       // 朱砂红=故障
-let CL_TRACK = Color(red: 0.890, green: 0.863, blue: 0.769)     // #E3DCC4 轨道
+// 见林OS 官网设计系统（森林晨光风）：暖米绿底 + 森林绿墨 + 朱砂红 + 琥珀金 + 玻璃拟态
+// 对齐 jianlinos.com 的 global.css：--bg #EDEFE5 / --ink #22382C / --red #C0532E / --amber #B8872D
+let CL_BG = Color(red: 0.929, green: 0.937, blue: 0.898)        // #EDEFE5 暖米绿底
+let CL_BG_BAR = Color(red: 0.882, green: 0.898, blue: 0.839)    // #E1E5D6 栏底
+let CL_CARD = Color.white.opacity(0.55)                          // 玻璃白卡（半透明）
+let CL_CARD_HL = Color.white.opacity(0.58)                       // 玻璃高光边
+let CL_CARD_SHADOW = Color(red: 0.133, green: 0.220, blue: 0.173).opacity(0.11)
+let CL_PRIMARY = Color(red: 0.133, green: 0.220, blue: 0.173)   // #22382C 森林绿墨（主标题/正文加粗）
+let CL_SECONDARY = Color(red: 0.263, green: 0.333, blue: 0.290) // #43554A 森林绿正文
+let CL_TERTIARY = Color(red: 0.420, green: 0.478, blue: 0.424)  // #6B7A6C 灰绿辅助
+let CL_MUTED = Color(red: 0.541, green: 0.576, blue: 0.522)     // #8A9385 淡灰绿
+let CL_ACCENT = Color(red: 0.753, green: 0.325, blue: 0.180)    // #C0532E 朱砂红（强调/印章）
+let CL_AMBER = Color(red: 0.722, green: 0.529, blue: 0.176)     // #B8872D 琥珀金
+let CL_GREEN = Color(red: 0.298, green: 0.420, blue: 0.314)     // #4C6B50 森林绿=正常/健康
+let CL_ORANGE = CL_AMBER                                         // 警告=琥珀金
+let CL_RED = CL_ACCENT                                           // 故障/高风险=朱砂红
+let CL_TRACK = Color(red: 0.847, green: 0.867, blue: 0.804)     // #D8DECD 轨道 绿灰
 
 func verdictColor(_ v: String) -> Color { switch v { case "正常": return CL_GREEN; case "国外缓慢": return CL_ORANGE; case "读取中…": return CL_TERTIARY; default: return CL_RED } }
 func verdictSymbol(_ v: String) -> String { switch v { case "正常": return "checkmark.shield.fill"; case "国外缓慢": return "exclamationmark.triangle.fill"; case "读取中…": return "hourglass"; default: return "exclamationmark.octagon.fill" } }
@@ -331,8 +336,16 @@ func publicText(_ s: String) -> String {
      .replacingOccurrences(of: oldBlockedWord, with: "链路")
 }
 
-struct CardBackground: ViewModifier { func body(content: Content) -> some View { content.background(RoundedRectangle(cornerRadius: 16).fill(CL_CARD).shadow(color: CL_CARD_SHADOW, radius: 8, y: 3)) } }
+struct CardBackground: ViewModifier { func body(content: Content) -> some View { content
+    .background(RoundedRectangle(cornerRadius: 18).fill(CL_CARD))
+    .overlay(RoundedRectangle(cornerRadius: 18).stroke(CL_CARD_HL, lineWidth: 1))
+    .shadow(color: CL_CARD_SHADOW, radius: 10, y: 4) } }
 extension View { var cardStyle: some View { modifier(CardBackground()) } }
+// 官网玻璃卡的通用底：半透明白 + 高光描边，圆角随传入
+func glassCard(_ radius: CGFloat = 12) -> some View {
+    RoundedRectangle(cornerRadius: radius).fill(CL_CARD)
+        .overlay(RoundedRectangle(cornerRadius: radius).stroke(CL_CARD_HL, lineWidth: 1))
+}
 
 // MARK: - 更新检查
 struct UpdateInfo {
@@ -361,7 +374,7 @@ extension URLSession {
 
 // MARK: - 简化数据模型
 struct SimpleRisk: Codable {
-    var total_score: Int; var risk_level: String; var risk_emoji: String; var tspu_tier: String
+    var total_score: Int; var risk_level: String; var risk_emoji: String; var risk_tier: String
     var signals_major: [String]; var signals_minor: [String]
     var proxy_ip: SimpleIP; var api_access: SimpleAPIs
     var proxy_info: SimpleProxyInfo?; var location_history: [SimpleLocHis]?; var location_changes_24h: Int?
@@ -370,7 +383,7 @@ struct SimpleRisk: Codable {
         let c = try d.container(keyedBy: CodingKeys.self)
         total_score = try c.decodeIfPresent(Int.self, forKey: .total_score) ?? 0
         risk_level = try c.decodeIfPresent(String.self, forKey: .risk_level) ?? ""; risk_emoji = try c.decodeIfPresent(String.self, forKey: .risk_emoji) ?? ""
-        tspu_tier = try c.decodeIfPresent(String.self, forKey: .tspu_tier) ?? ""
+        risk_tier = try c.decodeIfPresent(String.self, forKey: .risk_tier) ?? ""
         signals_major = try c.decodeIfPresent([String].self, forKey: .signals_major) ?? []
         signals_minor = try c.decodeIfPresent([String].self, forKey: .signals_minor) ?? []
         proxy_ip = try c.decodeIfPresent(SimpleIP.self, forKey: .proxy_ip) ?? SimpleIP()
@@ -454,10 +467,10 @@ func scoreColor(_ s: Int) -> Color { if s >= 85 { return CL_GREEN }; if s >= 70 
 
 func verdictNSColor(_ v: String) -> NSColor {
     switch publicText(v) {
-    case "正常": return NSColor(red: 0.420, green: 0.478, blue: 0.227, alpha: 1)   // 暖橄榄
-    case "国外缓慢": return NSColor(red: 0.729, green: 0.459, blue: 0.090, alpha: 1) // 琥珀
-    case "读取中…": return NSColor(red: 0.541, green: 0.510, blue: 0.463, alpha: 1)  // 灰棕
-    default: return NSColor(red: 0.753, green: 0.325, blue: 0.180, alpha: 1)        // 朱砂红
+    case "正常": return NSColor(red: 0.298, green: 0.420, blue: 0.314, alpha: 1)   // #4C6B50 森林绿
+    case "国外缓慢": return NSColor(red: 0.722, green: 0.529, blue: 0.176, alpha: 1) // #B8872D 琥珀金
+    case "读取中…": return NSColor(red: 0.541, green: 0.576, blue: 0.522, alpha: 1)  // #8A9385 淡灰绿
+    default: return NSColor(red: 0.753, green: 0.325, blue: 0.180, alpha: 1)        // #C0532E 朱砂红
     }
 }
 
@@ -549,10 +562,10 @@ struct NetworkPage: View {
         return a.isEmpty ? "在跑" : a
     }
     func aiOK() -> Bool {
-        // 通道断了 AI 必然连不上；安全体检数据可能是十分钟前的旧值，不能据此报“可访问”
+        // 只测网络层能否触达 AI 服务：通道断了必然连不上；安全体检数据可能是旧值，故先 guard 当前通道
         guard m.status?.foreign.ok == true else { return false }
         if let api = m.simpleRisk?.api_access, !api.openai.status.isEmpty {
-            return api.openai.status == "可访问" || api.anthropic.status == "可访问" || api.google.status == "可访问"
+            return api.openai.status == "网络可达" || api.anthropic.status == "网络可达" || api.google.status == "网络可达"
         }
         return true
     }
@@ -570,7 +583,7 @@ struct NetworkPage: View {
                 CheckRow(name: "国内网站", ok: st?.domestic.ok ?? false, detail: (st?.domestic.ok ?? false) ? "✓ 通" : "✕ 断")
                 CheckRow(name: "代理软件", ok: proxyRunning(), detail: proxyRunning() ? "✓ \(activeApp())" : "✕ 没开")
                 CheckRow(name: "代理通道", ok: st?.foreign.ok ?? false, detail: (st?.foreign.ok ?? false) ? "✓ 通" : "✕ 断")
-                CheckRow(name: "AI 服务", ok: aiOK(), detail: aiOK() ? "✓ 可访问" : "✕ 受阻")
+                CheckRow(name: "AI 通道", ok: aiOK(), detail: aiOK() ? "✓ 通" : "✕ 不通")
             }
             HStack(spacing: 5) {
                 Circle().fill(m.serviceAlive ? CL_GREEN : CL_RED).frame(width: 6, height: 6)
@@ -588,34 +601,37 @@ struct SecurityPage: View {
         Group {
             if let r = m.simpleRisk, !r.risk_level.isEmpty {
                 VStack(spacing: 12) {
+                    kai("出口 IP 信誉体检", 15).foregroundColor(CL_PRIMARY)
                     RingView(frac: Double(r.total_score) / 100.0, color: scoreColor(r.total_score),
-                             big: r.total_score > 0 ? "\(r.total_score)" : "—", small: r.risk_level)
+                             big: r.total_score > 0 ? "\(r.total_score)" : "—", small: "信誉分")
                     VStack(spacing: 0) {
                         let loc = "\(r.proxy_ip.city) \(r.proxy_ip.code)".trimmingCharacters(in: .whitespaces)
                         CheckRow(name: "当前出口", ok: !r.proxy_ip.ip.isEmpty, detail: loc.isEmpty ? "未拿到" : loc)
-                        CheckRow(name: "被风控概率", ok: r.total_score >= 70, detail: r.total_score > 0 ? "\(100 - r.total_score)/100" : "—")
-                        CheckRow(name: "ChatGPT", ok: r.api_access.openai.status == "可访问", detail: r.api_access.openai.status.isEmpty ? "—" : r.api_access.openai.status)
-                        CheckRow(name: "Claude", ok: r.api_access.anthropic.status == "可访问", detail: r.api_access.anthropic.status.isEmpty ? "—" : r.api_access.anthropic.status)
+                        CheckRow(name: "信誉评级", ok: r.total_score >= 70, detail: r.risk_level.isEmpty ? "—" : r.risk_level)
+                        CheckRow(name: "ChatGPT 通道", ok: r.api_access.openai.status == "网络可达", detail: r.api_access.openai.status.isEmpty ? "—" : r.api_access.openai.status)
+                        CheckRow(name: "Claude 通道", ok: r.api_access.anthropic.status == "网络可达", detail: r.api_access.anthropic.status.isEmpty ? "—" : r.api_access.anthropic.status)
                         CheckRow(name: "数据源交叉", ok: r.source_ok >= 3, detail: "\(r.source_ok) / \(r.source_total)")
                     }
-                    Text("不做确定承诺，只帮你少瞎猜、多个判断依据。")
+                    .padding(.horizontal, 12).padding(.vertical, 4)
+                    .background(glassCard(14))
+                    Text("只看这个出口 IP 干不干净、网络通不通；\n不预测账号会不会被封——封号看行为，不看 IP。")
                         .font(.system(size: 11)).foregroundColor(CL_TERTIARY)
-                        .multilineTextAlignment(.center).padding(8)
+                        .multilineTextAlignment(.center).lineSpacing(2).padding(10)
                         .frame(maxWidth: .infinity)
-                        .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.5)))
+                        .background(glassCard(12))
                     Button(action: { m.runRiskCheck() }) {
                         Text(m.riskChecking ? "正在重新体检…" : "重新体检").font(.system(size: 12)).foregroundColor(CL_ACCENT)
                     }.buttonStyle(.plain).disabled(m.riskChecking)
                 }
             } else {
                 VStack(spacing: 12) {
-                    kai("还没做账号体检", 16).foregroundColor(CL_PRIMARY)
-                    Text("用 5 个数据源交叉看看\n你的代理 IP 风险").font(.system(size: 12)).foregroundColor(CL_SECONDARY).multilineTextAlignment(.center)
+                    kai("还没做 IP 信誉体检", 16).foregroundColor(CL_PRIMARY)
+                    Text("用 5 个数据源交叉，给代理\n出口 IP 做一次信誉体检").font(.system(size: 12)).foregroundColor(CL_SECONDARY).multilineTextAlignment(.center)
                     Button(action: { m.runRiskCheck() }) {
                         Text(m.riskChecking ? "体检中…（约 10 秒）" : "做一次体检")
                             .font(.system(size: 13)).foregroundColor(.white)
                             .padding(.horizontal, 18).padding(.vertical, 8)
-                            .background(RoundedRectangle(cornerRadius: 8).fill(CL_ACCENT))
+                            .background(RoundedRectangle(cornerRadius: 10).fill(CL_ACCENT))
                     }.buttonStyle(.plain).disabled(m.riskChecking)
                 }.padding(.top, 24)
             }
@@ -700,7 +716,7 @@ struct AboutPage: View {
         VStack(spacing: 12) {
             kai("网络体检", 20).foregroundColor(CL_PRIMARY)
             Text("v\(APP_VERSION) · 见林OS").font(.system(size: 11)).foregroundColor(CL_TERTIARY)
-            Text("按你选的频率自动体检，断了告诉你哪坏了；\n还能看代理 IP 的封号风险。")
+            Text("按你选的频率自动体检，断了告诉你哪坏了；\n还能给代理出口 IP 做信誉体检。")
                 .font(.system(size: 12)).foregroundColor(CL_SECONDARY).multilineTextAlignment(.center)
             VStack(spacing: 8) {
                 aboutBtn("复制体检报告给 AI", "doc.on.doc") {
@@ -876,7 +892,11 @@ struct RootView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 7) {
-                Circle().fill(CL_ACCENT).frame(width: 8, height: 8)
+                // 官网品牌红印章（seal-mini）：红底白字楷体方章
+                Text("网").font(.custom(KAI, size: 12)).foregroundColor(Color(red: 1.0, green: 0.973, blue: 0.941))
+                    .frame(width: 21, height: 21)
+                    .background(RoundedRectangle(cornerRadius: 5).fill(CL_ACCENT))
+                    .shadow(color: CL_ACCENT.opacity(0.35), radius: 4, y: 2)
                 kai("网络体检", 17).foregroundColor(CL_PRIMARY)
                 Spacer()
                 Button(action: { m.refresh() }) {
@@ -915,7 +935,16 @@ struct RootView: View {
             }.padding(.horizontal, 16).padding(.vertical, 8)
         }
         .frame(width: 360, height: 500)
-        .background(CL_BG)
+        .background(
+            ZStack {
+                CL_BG
+                // 官网 body 的森林晨光：左上角一抹琥珀暖光 + 右上一抹森林绿
+                RadialGradient(gradient: Gradient(colors: [CL_AMBER.opacity(0.16), .clear]),
+                               center: UnitPoint(x: 0.10, y: 0.04), startRadius: 2, endRadius: 240)
+                RadialGradient(gradient: Gradient(colors: [CL_GREEN.opacity(0.12), .clear]),
+                               center: UnitPoint(x: 0.92, y: 0.14), startRadius: 2, endRadius: 200)
+            }
+        )
     }
 }
 
