@@ -6,7 +6,7 @@
 
 > 说明：信誉体检只看这个出口 IP 干不干净、网络能不能通到服务，**不预测账号会不会被封**——封号取决于账号行为，不是 IP。
 
-> 当前版本：v5.6 内测版
+> 当前版本：v5.7 内测版
 > 这是我个人 build 的第一个 vibecoding 产品，欢迎提意见、报 bug、提新需求。
 
 ## 下载安装
@@ -27,6 +27,7 @@
 - 自动识别常见代理软件：Surge、Shadowrocket、Clash Verge、ClashX、Loon、Quantumult X、V2RayX、sing-box、Hiddify 等
 - 自动记录之前出过的问题，方便回头看
 - 一键给代理出口 IP 做信誉体检（看 IP 干不干净、网络通不通，不预测账号封禁），给出大白话结果
+- 「身份」页做一致性自查：系统时区 / 语言 / 已装中文字体是否与出口 IP 自洽（比如挂美国节点但时区还在上海、或装了方正等国产字体，就会提示穿帮），给出让环境自洽的建议；只减少「地区不一致」这类误判信号，不承诺不封号。其中时区是 Claude Code 命令行真会读的，字体只有浏览器登录 claude.ai 时才可能被网页 canvas 探到
 - 有新版时，App 内可以自动下载、替换并重启
 
 ## 适合谁
@@ -88,3 +89,5 @@ MIT License
 - [nitefood/asn](https://github.com/nitefood/asn)
 - [pwnnex/ByeByeVPN](https://github.com/pwnnex/ByeByeVPN)
 - [autumncry/netstats](https://github.com/autumncry/netstats)
+- [LinXiaoTao/FuckClaude](https://github.com/LinXiaoTao/FuckClaude) — 身份页中文字体等检测信号清单参考
+- [Azurboy/GeoMirror](https://github.com/Azurboy/geomirror) — 浏览器地区一致性信号思路参考

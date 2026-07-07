@@ -376,7 +376,7 @@ extension URLSession {
 struct SimpleRisk: Codable {
     var total_score: Int; var risk_level: String; var risk_emoji: String; var risk_tier: String
     var signals_major: [String]; var signals_minor: [String]
-    var proxy_ip: SimpleIP; var api_access: SimpleAPIs
+    var proxy_ip: SimpleIP; var api_access: SimpleAPIs; var identity: SimpleIdentity?
     var proxy_info: SimpleProxyInfo?; var location_history: [SimpleLocHis]?; var location_changes_24h: Int?
     var source_ok: Int = 0; var source_total: Int = 5
     init(from d: Decoder) throws {
@@ -388,6 +388,7 @@ struct SimpleRisk: Codable {
         signals_minor = try c.decodeIfPresent([String].self, forKey: .signals_minor) ?? []
         proxy_ip = try c.decodeIfPresent(SimpleIP.self, forKey: .proxy_ip) ?? SimpleIP()
         api_access = try c.decodeIfPresent(SimpleAPIs.self, forKey: .api_access) ?? SimpleAPIs()
+        identity = try c.decodeIfPresent(SimpleIdentity.self, forKey: .identity)
         proxy_info = try c.decodeIfPresent(SimpleProxyInfo.self, forKey: .proxy_info)
         location_history = try c.decodeIfPresent([SimpleLocHis].self, forKey: .location_history)
         location_changes_24h = try c.decodeIfPresent(Int.self, forKey: .location_changes_24h)
@@ -421,6 +422,34 @@ struct SimpleAPIs: Codable {
         google = try c.decodeIfPresent(SimpleAPIItem.self, forKey: .google) ?? SimpleAPIItem()
     }
     init() { openai = SimpleAPIItem(); anthropic = SimpleAPIItem(); google = SimpleAPIItem() }
+}
+struct SimpleIdentity: Codable {
+    var timezone = ""; var tz_offset = ""; var tz_is_china = false
+    var locale = ""; var language = ""; var lang_is_china = false
+    var base_url = ""; var base_url_is_china = false
+    var fonts = ""; var fonts_is_cn = false
+    var ip_country = ""; var tz_ip_consistent = true
+    var score = 0; var level = ""; var signals: [String] = []; var advice: [String] = []
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        timezone = try c.decodeIfPresent(String.self, forKey: .timezone) ?? ""
+        tz_offset = try c.decodeIfPresent(String.self, forKey: .tz_offset) ?? ""
+        tz_is_china = try c.decodeIfPresent(Bool.self, forKey: .tz_is_china) ?? false
+        locale = try c.decodeIfPresent(String.self, forKey: .locale) ?? ""
+        language = try c.decodeIfPresent(String.self, forKey: .language) ?? ""
+        lang_is_china = try c.decodeIfPresent(Bool.self, forKey: .lang_is_china) ?? false
+        base_url = try c.decodeIfPresent(String.self, forKey: .base_url) ?? ""
+        base_url_is_china = try c.decodeIfPresent(Bool.self, forKey: .base_url_is_china) ?? false
+        fonts = try c.decodeIfPresent(String.self, forKey: .fonts) ?? ""
+        fonts_is_cn = try c.decodeIfPresent(Bool.self, forKey: .fonts_is_cn) ?? false
+        ip_country = try c.decodeIfPresent(String.self, forKey: .ip_country) ?? ""
+        tz_ip_consistent = try c.decodeIfPresent(Bool.self, forKey: .tz_ip_consistent) ?? true
+        score = try c.decodeIfPresent(Int.self, forKey: .score) ?? 0
+        level = try c.decodeIfPresent(String.self, forKey: .level) ?? ""
+        signals = try c.decodeIfPresent([String].self, forKey: .signals) ?? []
+        advice = try c.decodeIfPresent([String].self, forKey: .advice) ?? []
+    }
+    init() {}
 }
 struct SimpleProxyApp: Codable {
     var name: String = ""; var running: Bool = false; var installed: Bool = false; var is_active: Bool = false; var http_port: Int = 0; var socks_port: Int = 0
@@ -458,7 +487,7 @@ struct SimpleLocHis: Codable {
 // 数据层（Monitor / 各 struct / 颜色 / helper）保留在本文件上半部分
 // ===================================================================
 
-let APP_VERSION: String = (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "5.3"
+let APP_VERSION: String = (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "5.7"
 let KAI = "STKaiti"
 
 func kai(_ t: String, _ size: CGFloat) -> Text { Text(t).font(.custom(KAI, size: size)) }
@@ -467,11 +496,37 @@ func scoreColor(_ s: Int) -> Color { if s >= 85 { return CL_GREEN }; if s >= 70 
 
 func verdictNSColor(_ v: String) -> NSColor {
     switch publicText(v) {
-    case "正常": return NSColor(red: 0.298, green: 0.420, blue: 0.314, alpha: 1)   // #4C6B50 森林绿
+    case "正常": return NSColor(red: 0.322, green: 0.560, blue: 0.278, alpha: 1)   // #528F47 菜单栏醒目绿
     case "国外缓慢": return NSColor(red: 0.722, green: 0.529, blue: 0.176, alpha: 1) // #B8872D 琥珀金
     case "读取中…": return NSColor(red: 0.541, green: 0.576, blue: 0.522, alpha: 1)  // #8A9385 淡灰绿
     default: return NSColor(red: 0.753, green: 0.325, blue: 0.180, alpha: 1)        // #C0532E 朱砂红
     }
+}
+
+// 见林品牌菜单栏图标：梯子🪜（两根边杆 + 横档）。双关：梯子=代理/翻墙工具，正贴 NetWatch 测代理。
+// 直接用状态色描边、非 template → 保证菜单栏实打实显示颜色（正常绿 / 缓慢琥珀 / 故障红），
+// 不走 contentTintColor（那套在菜单栏常被系统忽略、深色模式会强制反白）。
+func brandStatusIcon(_ color: NSColor) -> NSImage {
+    let w: CGFloat = 13, h: CGFloat = 14
+    let img = NSImage(size: NSSize(width: w, height: h))
+    img.lockFocus()
+    if let ctx = NSGraphicsContext.current?.cgContext {
+        ctx.setLineCap(.round); ctx.setLineJoin(.round)
+        ctx.setStrokeColor(color.cgColor)
+        ctx.setLineWidth(1.6)
+        let lx: CGFloat = 3.9, rx: CGFloat = 9.1, top: CGFloat = 12.7, bot: CGFloat = 1.3
+        // 两根竖边杆
+        ctx.move(to: CGPoint(x: lx, y: bot)); ctx.addLine(to: CGPoint(x: lx, y: top))
+        ctx.move(to: CGPoint(x: rx, y: bot)); ctx.addLine(to: CGPoint(x: rx, y: top))
+        // 4 根横档
+        for ry in [2.7, 5.4, 8.1, 10.8] as [CGFloat] {
+            ctx.move(to: CGPoint(x: lx, y: ry)); ctx.addLine(to: CGPoint(x: rx, y: ry))
+        }
+        ctx.strokePath()
+    }
+    img.unlockFocus()
+    img.isTemplate = false   // 非模板：系统不覆盖颜色，梯子实打实显示绿/红
+    return img
 }
 
 func shortVerdict(_ v: String) -> String {
@@ -634,6 +689,78 @@ struct SecurityPage: View {
                             .background(RoundedRectangle(cornerRadius: 10).fill(CL_ACCENT))
                     }.buttonStyle(.plain).disabled(m.riskChecking)
                 }.padding(.top, 24)
+            }
+        }
+    }
+}
+
+// MARK: - 身份页（Claude 眼里的你：身份一致性自查）
+struct IdentityPage: View {
+    @ObservedObject var m: Monitor
+    var body: some View {
+        Group {
+            if let id = m.simpleRisk?.identity, !id.level.isEmpty {
+                VStack(spacing: 12) {
+                    kai("Claude 眼里的你", 15).foregroundColor(CL_PRIMARY)
+                    RingView(frac: Double(id.score) / 100.0, color: scoreColor(id.score),
+                             big: id.score > 0 ? "\(id.score)" : "—", small: "一致性")
+                    VStack(spacing: 0) {
+                        CheckRow(name: "系统时区", ok: !id.tz_is_china, detail: id.timezone.isEmpty ? "—" : id.timezone)
+                        CheckRow(name: "出口 IP", ok: !id.ip_country.isEmpty && id.ip_country != "CN", detail: id.ip_country.isEmpty ? "—" : id.ip_country)
+                        CheckRow(name: "时区 ↔ IP", ok: id.tz_ip_consistent, detail: id.tz_ip_consistent ? "对得上" : "穿帮")
+                        CheckRow(name: "系统语言", ok: !id.lang_is_china, detail: id.language.isEmpty ? "—" : id.language)
+                        CheckRow(name: "中文字体", ok: !id.fonts_is_cn, detail: id.fonts.isEmpty ? "—" : id.fonts)
+                        CheckRow(name: "中转地址", ok: !id.base_url_is_china, detail: id.base_url_is_china ? "中国镜像" : "官方直连")
+                    }
+                    .padding(.horizontal, 12).padding(.vertical, 4).background(glassCard(14))
+                    if !id.signals.isEmpty {
+                        VStack(alignment: .leading, spacing: 6) {
+                            kai("暴露了什么", 13).foregroundColor(CL_PRIMARY)
+                            ForEach(Array(id.signals.enumerated()), id: \.offset) { _, s in
+                                HStack(alignment: .top, spacing: 6) {
+                                    Text("•").foregroundColor(CL_ACCENT).font(.system(size: 12))
+                                    Text(s).font(.system(size: 11)).foregroundColor(CL_SECONDARY).fixedSize(horizontal: false, vertical: true)
+                                }
+                            }
+                        }.frame(maxWidth: .infinity, alignment: .leading).padding(10).background(glassCard(12))
+                    }
+                    if !id.advice.isEmpty {
+                        VStack(alignment: .leading, spacing: 6) {
+                            kai("怎么让它自洽", 13).foregroundColor(CL_GREEN)
+                            ForEach(Array(id.advice.enumerated()), id: \.offset) { _, a in
+                                HStack(alignment: .top, spacing: 6) {
+                                    Image(systemName: "checkmark.circle").foregroundColor(CL_GREEN).font(.system(size: 11))
+                                    Text(a).font(.system(size: 11)).foregroundColor(CL_SECONDARY).fixedSize(horizontal: false, vertical: true)
+                                }
+                            }
+                        }.frame(maxWidth: .infinity, alignment: .leading).padding(10).background(glassCard(12))
+                    }
+                    Text("时区是 Claude Code 命令行真会读的；语言和字体只有你用浏览器登录 claude.ai 时才可能被网页探到。都只是帮环境自洽、少踩「地区不一致」误判，做不到「包不封」，封号还看账号行为和支付。")
+                        .font(.system(size: 10)).foregroundColor(CL_TERTIARY)
+                        .multilineTextAlignment(.center).lineSpacing(2).padding(8)
+                        .frame(maxWidth: .infinity).background(glassCard(10))
+                    Button(action: { m.runRiskCheck() }) {
+                        Text(m.riskChecking ? "正在重新体检…" : "重新体检").font(.system(size: 12)).foregroundColor(CL_ACCENT)
+                    }.buttonStyle(.plain).disabled(m.riskChecking)
+                }
+            } else {
+                VStack(spacing: 12) {
+                    kai("Claude 眼里的你", 16).foregroundColor(CL_PRIMARY)
+                    let tz = TimeZone.current.identifier
+                    let lang = Locale.preferredLanguages.first ?? "—"
+                    VStack(spacing: 0) {
+                        CheckRow(name: "系统时区", ok: !tz.hasPrefix("Asia/Shanghai") && !tz.hasPrefix("Asia/Urumqi") && !tz.hasPrefix("Asia/Chongqing"), detail: tz)
+                        CheckRow(name: "系统语言", ok: !lang.lowercased().contains("zh"), detail: lang)
+                    }
+                    .padding(.horizontal, 12).padding(.vertical, 4).background(glassCard(14))
+                    Text("做一次体检，对照出口 IP 看你\n对外像不像中国人").font(.system(size: 12)).foregroundColor(CL_SECONDARY).multilineTextAlignment(.center)
+                    Button(action: { m.runRiskCheck() }) {
+                        Text(m.riskChecking ? "体检中…（约 10 秒）" : "做一次体检")
+                            .font(.system(size: 13)).foregroundColor(.white)
+                            .padding(.horizontal, 18).padding(.vertical, 8)
+                            .background(RoundedRectangle(cornerRadius: 10).fill(CL_ACCENT))
+                    }.buttonStyle(.plain).disabled(m.riskChecking)
+                }.padding(.top, 16)
             }
         }
     }
@@ -911,8 +1038,9 @@ struct RootView: View {
             HStack(spacing: 0) {
                 TabButton(title: "网络", idx: 0, sel: $tab)
                 TabButton(title: "安全", idx: 1, sel: $tab)
-                TabButton(title: "历史", idx: 2, sel: $tab)
-                TabButton(title: "关于", idx: 3, sel: $tab)
+                TabButton(title: "身份", idx: 2, sel: $tab)
+                TabButton(title: "历史", idx: 3, sel: $tab)
+                TabButton(title: "关于", idx: 4, sel: $tab)
             }
             Rectangle().fill(CL_TERTIARY.opacity(0.22)).frame(height: 0.5)
 
@@ -920,7 +1048,8 @@ struct RootView: View {
                 Group {
                     if tab == 0 { NetworkPage(m: m) }
                     else if tab == 1 { SecurityPage(m: m) }
-                    else if tab == 2 { HistoryPage(m: m) }
+                    else if tab == 2 { IdentityPage(m: m) }
+                    else if tab == 3 { HistoryPage(m: m) }
                     else { AboutPage(m: m) }
                 }.padding(16)
             }
@@ -956,6 +1085,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var cancellable: AnyCancellable?
     var intervalObserver: NSObjectProtocol?
     private let backendQueue = DispatchQueue(label: "com.jianlin.netwatch.backend")
+    private var blinkTimer: Timer?
+    private var blinkFaded = false
 
     func applicationDidFinishLaunching(_ n: Notification) {
         // 后台铺设：provisionBackend 内含 launchctl + 跑脚本的同步阻塞，放主线程会拖慢启动、菜单栏图标迟出
@@ -993,12 +1124,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         b.attributedTitle = NSAttributedString(string: "")
         b.title = ""
         b.imagePosition = .imageOnly
-        let cfg = NSImage.SymbolConfiguration(pointSize: 13, weight: .semibold)
-        let img = NSImage(systemSymbolName: "wifi", accessibilityDescription: "网络体检")?.withSymbolConfiguration(cfg)
-        img?.isTemplate = true
-        b.image = img
-        b.contentTintColor = verdictNSColor(v)
+        b.contentTintColor = nil
+        let color = verdictNSColor(v)
+        if isFaultVerdict(v) {
+            startBlink(color: color)          // 故障：梯子红色闪烁提醒
+        } else {
+            stopBlink()
+            b.image = brandStatusIcon(color)  // 其他：常显（正常绿 / 缓慢琥珀 / 读取灰）
+        }
         b.toolTip = "网络体检 · " + publicText(v) + (ms > 0 ? " · \(ms)ms" : "")
+    }
+
+    func isFaultVerdict(_ v: String) -> Bool {
+        let c = publicText(v)
+        return c != "正常" && c != "国外缓慢" && c != "读取中…"
+    }
+    // 故障时让梯子在「红」和「淡红」间闪烁提醒；非故障停掉、常显。
+    func startBlink(color: NSColor) {
+        if blinkTimer != nil { return }               // 已在闪，不打断相位
+        guard let b = statusItem?.button else { return }
+        let full = brandStatusIcon(color)
+        let faded = brandStatusIcon(color.withAlphaComponent(0.22))
+        b.image = full; blinkFaded = false
+        let t = Timer(timeInterval: 0.55, repeats: true) { [weak self] _ in
+            guard let self = self, let b = self.statusItem?.button else { return }
+            self.blinkFaded.toggle()
+            b.image = self.blinkFaded ? faded : full
+        }
+        RunLoop.main.add(t, forMode: .common)         // .common：菜单打开时也继续闪
+        blinkTimer = t
+    }
+    func stopBlink() {
+        blinkTimer?.invalidate(); blinkTimer = nil
     }
 
     @objc func togglePopover(_ sender: Any?) {

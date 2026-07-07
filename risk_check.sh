@@ -108,7 +108,22 @@ API_OPENAI="$(test_api "https://api.openai.com/v1/models")"
 API_ANTHROPIC="$(test_api "https://api.anthropic.com/v1/messages")"
 API_GOOGLE="$(test_api "https://generativelanguage.googleapis.com/")"
 
-export TS OUT PROXY_INFO PROXY_IP DIRECT_IP DIRECT_INFO SRC1 SRC2 SRC3 SRC4 SRC5 API_OPENAI API_ANTHROPIC API_GOOGLE
+# 本地身份信号（全本地读取，不联网）：系统时区 / 语言 / 是否配了中转地址
+# 用途：与出口 IP 国家做一致性对照，看这台机器对外「像不像中国人」
+TZNAME="$(readlink /etc/localtime 2>/dev/null | sed 's|.*/zoneinfo/||')"
+[ -z "$TZNAME" ] && TZNAME="$(date +%Z 2>/dev/null)"
+TZOFFSET="$(date +%z 2>/dev/null)"
+SYS_LOCALE="$(defaults read -g AppleLocale 2>/dev/null | tr -d ' ')"
+SYS_LANG="$(defaults read -g AppleLanguages 2>/dev/null | tr -d ' \n"()[]' | cut -d, -f1)"
+BASE_URL="${ANTHROPIC_BASE_URL:-}"
+[ -z "$BASE_URL" ] && BASE_URL="$(grep -h -E 'ANTHROPIC_BASE_URL' "$HOME/.zshrc" "$HOME/.zshenv" "$HOME/.bashrc" "$HOME/.bash_profile" "$HOME/.profile" 2>/dev/null | grep -v '^[[:space:]]*#' | sed -E 's/.*ANTHROPIC_BASE_URL[=:[:space:]]+//; s/["'"'"']//g; s/[[:space:]].*//' | tail -1)"
+
+# 中文/国产字体探测：只扫用户主动安装目录（~/Library/Fonts、/Library/Fonts），
+# 不碰系统预装 /System/Library/Fonts（全球 Mac 都带 PingFang，扫了会误报）。
+# 定位：浏览器登录 claude.ai 时 canvas 能探到这些字体；Claude Code 命令行不读字体，属软信号。
+FONT_FILES="$(find "$HOME/Library/Fonts" "/Library/Fonts" -maxdepth 1 -type f 2>/dev/null | sed 's|.*/||' | tr '\n' '|')"
+
+export TS OUT PROXY_INFO PROXY_IP DIRECT_IP DIRECT_INFO SRC1 SRC2 SRC3 SRC4 SRC5 API_OPENAI API_ANTHROPIC API_GOOGLE TZNAME TZOFFSET SYS_LOCALE SYS_LANG BASE_URL FONT_FILES
 
 osascript -l JavaScript <<'JXA'
 ObjC.import('Foundation')
@@ -298,6 +313,71 @@ const directIpInfo = {
   isp: jget(direct, ["isp"], ""),
   asn: jget(direct, ["as"], "")
 }
+
+// ===== 身份一致性自查：这台机器对外「像不像中国人」，与出口 IP 是否自洽 =====
+// 诚实定位：只诊断环境是否自洽 + 减少「人机地不一致」这类误判信号；不承诺不封号（封号还看账号行为/支付）。
+const tzName = getenv("TZNAME"); const tzOffset = getenv("TZOFFSET")
+const sysLocale = getenv("SYS_LOCALE"); const sysLang = getenv("SYS_LANG")
+const baseUrl = getenv("BASE_URL")
+const ipCode = proxyIpInfo.code   // 出口 IP 国家码，如 US
+const chinaZones = ["Asia/Shanghai","Asia/Urumqi","Asia/Chongqing","Asia/Harbin","Asia/Kashgar","Asia/Macau","PRC","CST-8"]
+const tzIsChina = chinaZones.includes(tzName)
+const langIsChina = /(^|[^a-z])zh[-_]?(cn|hans)/i.test(sysLang) || /(^|[^a-z])zh[-_]?(cn|hans)/i.test(sysLocale)
+const cnMirror = /(\.cn(\b|[\/:])|deepseek|moonshot|zhipu|baidu|alibaba|aliyun|bytedance|kimi|qwen|bigmodel|volcengine|siliconflow)/i
+const baseUrlIsChina = !!baseUrl && cnMirror.test(baseUrl)
+const ipIsChina = ipCode === "CN"
+let idScore = 100
+const idSignals = []; const idAdvice = []
+function idFlag(sig, adv, pen){ idSignals.push(sig); if (adv) idAdvice.push(adv); idScore -= pen }
+if (tzIsChina && !ipIsChina && ipCode) idFlag(`系统时区 ${tzName} 属中国，但出口 IP 在 ${ipCode}，这是最容易被判「人机地不一致」的信号`, `系统设置 → 通用 → 日期与时间 → 关闭「自动」，时区改成与节点一致的地区（美国节点→洛杉矶/纽约）`, 45)
+else if (tzIsChina && ipIsChina) idFlag(`系统时区中国 + 出口 IP 也在中国，等于没走代理`, `确认代理已开启并走对分流规则`, 30)
+if (langIsChina && !ipIsChina && ipCode) idFlag(`系统首选语言是简体中文（${sysLang || sysLocale}），与海外出口不完全一致（软信号，权重低）`, `介意可在浏览器单独给 claude.ai 设英文；系统语言不必强改`, 12)
+if (baseUrlIsChina) idFlag(`检测到 ANTHROPIC_BASE_URL 指向疑似中国中转：${baseUrl}`, `官方直连用 https://api.anthropic.com；第三方中转有额外风险`, 20)
+// 中文/国产字体（软信号）：只有浏览器登录 claude.ai 时 canvas 能探到，命令行 Claude Code 不读字体，故权重低
+const fontFiles = (getenv("FONT_FILES") || "").split("|").filter(Boolean)
+const fontVendorRules = [
+  [/方正|(^|[^a-z])fz[a-z]/i, "方正"],
+  [/(^|[^a-z])hy[a-z]/i, "汉仪"],
+  [/misans/i, "小米 MiSans"],
+  [/harmonyos/i, "华为 HarmonyOS"],
+  [/honor[-_ ]?sans/i, "荣耀"],
+  [/alibaba|puhuiti/i, "阿里普惠体"],
+  [/dingtalk/i, "钉钉进步体"],
+  [/douyin/i, "抖音美好体"],
+  [/wenquanyi/i, "文泉驿"],
+  [/oppo[-_ ]?sans/i, "OPPO Sans"],
+  [/vivo[-_ ]?sans/i, "vivo Sans"]
+]
+const fontCommonRules = [
+  [/sourcehan.*cn|siyuan/i, "思源 CN"],
+  [/notosans.*sc|notoserif.*sc/i, "思源黑/宋"],
+  [/simsun|simhei|simkai|simfang|msyh/i, "Windows 中文字体"]
+]
+const fontVendorHits = []
+for (const [re, label] of fontVendorRules) if (fontFiles.some(f => re.test(f)) && !fontVendorHits.includes(label)) fontVendorHits.push(label)
+const fontCommonHits = []
+for (const [re, label] of fontCommonRules) if (fontFiles.some(f => re.test(f)) && !fontCommonHits.includes(label)) fontCommonHits.push(label)
+const fontsIsCn = fontVendorHits.length > 0
+const fontAllHits = fontVendorHits.concat(fontCommonHits)
+const fontsLabel = fontVendorHits.length
+  ? fontVendorHits.slice(0, 2).join("、") + (fontAllHits.length > 2 ? ` 等 ${fontAllHits.length} 类` : "")
+  : (fontCommonHits.length ? fontCommonHits.slice(0, 2).join("、") : "未见国产字体")
+if (fontsIsCn && !ipIsChina && ipCode) idFlag(
+  `装了国产厂商字体（${fontVendorHits.slice(0, 4).join("、")}），浏览器登录 claude.ai 时网页 canvas 能探到（软信号，命令行 Claude Code 不读字体）`,
+  `介意就用独立/无痕浏览器 profile 单独登录 claude.ai；别卸字体，卸了影响公文排版`,
+  8)
+idScore = Math.max(0, Math.min(100, idScore))
+let idLevel = "自洽 · 未暴露中国身份"
+if (idScore < 55) idLevel = "不一致 · 身份易暴露"
+else if (idScore < 85) idLevel = "有瑕疵 · 存在软信号"
+const identity = {
+  timezone: tzName, tz_offset: tzOffset, tz_is_china: tzIsChina,
+  locale: sysLocale, language: sysLang, lang_is_china: langIsChina,
+  base_url: baseUrl, base_url_is_china: baseUrlIsChina,
+  fonts: fontsLabel, fonts_is_cn: fontsIsCn,
+  ip_country: ipCode, tz_ip_consistent: (!tzIsChina || ipIsChina),
+  score: idScore, level: idLevel, signals: idSignals, advice: idAdvice
+}
 const reputation = {
   stopforumspam: {appears: sfsAppears === "1", frequency: Number(sfsFreq) || 0},
   greynoise: {noise: gnNoise, riot: gnRiot, classification: gnClass, name: gnName},
@@ -352,6 +432,7 @@ const data = {
   shodan: shodanInfo,
   reputation,
   api_access: apiResults,
+  identity: identity,
   proxy_info: proxyInfo,
   location_history: history.slice(-20),
   location_changes_24h: history.filter(h => h.changed).length,
