@@ -96,7 +96,14 @@ final class Monitor: ObservableObject {
     private static let allowedIntervals = [15, 30, 60]
 
     static func savedCheckIntervalSeconds() -> Int {
-        let stored = UserDefaults.standard.integer(forKey: intervalKey)
+        let d = UserDefaults.standard
+        // v5.8 一次性迁移：默认频率 15s→60s（轻量运行，每轮探测省 3/4 的 curl/ping）。
+        // 之后用户在界面里选的 15/30/60 照常生效，不再被迁移覆盖。
+        if !d.bool(forKey: "NetWatchInterval60Migrated") {
+            d.set(true, forKey: "NetWatchInterval60Migrated")
+            d.set(60, forKey: intervalKey)
+        }
+        let stored = d.integer(forKey: intervalKey)
         if allowedIntervals.contains(stored) { return stored }
         let path = NSHomeDirectory() + "/Library/Application Support/NetWatch/.check_interval"
         if let s = try? String(contentsOfFile: path, encoding: .utf8),
@@ -105,7 +112,7 @@ final class Monitor: ObservableObject {
             UserDefaults.standard.set(v, forKey: intervalKey)
             return v
         }
-        return 15
+        return 60
     }
 
     func setCheckInterval(_ seconds: Int) {
@@ -487,7 +494,7 @@ struct SimpleLocHis: Codable {
 // 数据层（Monitor / 各 struct / 颜色 / helper）保留在本文件上半部分
 // ===================================================================
 
-let APP_VERSION: String = (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "5.7"
+let APP_VERSION: String = (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "5.8"
 let KAI = "STKaiti"
 
 func kai(_ t: String, _ size: CGFloat) -> Text { Text(t).font(.custom(KAI, size: size)) }
@@ -1087,6 +1094,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let backendQueue = DispatchQueue(label: "com.jianlin.netwatch.backend")
     private var blinkTimer: Timer?
     private var blinkFaded = false
+    // 启动时 provisionBackend 已经跑一次，看门狗从 5 分钟后开始接手
+    private var lastHealAttempt = Date()
 
     func applicationDidFinishLaunching(_ n: Notification) {
         // 后台铺设：provisionBackend 内含 launchctl + 跑脚本的同步阻塞，放主线程会拖慢启动、菜单栏图标迟出
@@ -1108,6 +1117,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .receive(on: RunLoop.main)
             .sink { [weak self] _, _ in
                 self?.updateStatusButton()
+                self?.healBackendIfNeeded()
             }
         intervalObserver = NotificationCenter.default.addObserver(forName: .netWatchCheckIntervalChanged, object: nil, queue: .main) { [weak self] note in
             let seconds = (note.object as? Int) ?? Monitor.savedCheckIntervalSeconds()
@@ -1217,7 +1227,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let laDir = home + "/Library/LaunchAgents"
         try? fm.createDirectory(atPath: laDir, withIntermediateDirectories: true)
         let plistPath = laDir + "/" + label + ".plist"
-        if !refresh && fm.fileExists(atPath: plistPath) { return }
+        // 光看 plist 文件在不在不够：agent 可能已被外部 launchctl unload（2026-07-15 事故），
+        // 必须确认真的还挂在 launchd 上，没挂就往下走重新 load。
+        if !refresh && fm.fileExists(atPath: plistPath) && isAgentLoaded(label) { return }
         let plist = """
         <?xml version="1.0" encoding="UTF-8"?>
         <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -1237,6 +1249,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         try? unload.run(); unload.waitUntilExit()
         let load = Process(); load.executableURL = URL(fileURLWithPath: "/bin/launchctl"); load.arguments = ["load", "-w", plistPath]
         try? load.run(); load.waitUntilExit()
+    }
+
+    // launchctl list <label> 退出码 0 = agent 还挂在 launchd 上
+    func isAgentLoaded(_ label: String) -> Bool {
+        let p = Process(); p.executableURL = URL(fileURLWithPath: "/bin/launchctl")
+        p.arguments = ["list", label]
+        p.standardOutput = FileHandle.nullDevice
+        p.standardError = FileHandle.nullDevice
+        guard (try? p.run()) != nil else { return false }
+        p.waitUntilExit()
+        return p.terminationStatus == 0
+    }
+
+    // 自愈看门狗：App 常驻却眼睁睁显示「监测可能停了」不动手，是 7-15 事故拖一天的根因。
+    // serviceAlive 每 3 秒刷新，一旦判死就重跑 provisionBackend（内含挂载检查），5 分钟节流防抖。
+    func healBackendIfNeeded() {
+        guard !monitor.serviceAlive, Date().timeIntervalSince(lastHealAttempt) >= 300 else { return }
+        lastHealAttempt = Date()
+        backendQueue.async { self.provisionBackend() }
     }
 
     func runOnce(_ path: String) {

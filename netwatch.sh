@@ -96,6 +96,14 @@ trim_file() {
 
 find "$LOG" -name 'samples-*.jsonl' -mtime +"$RETAIN_DAYS" -delete 2>/dev/null || true
 
+# launchd 转发的 stdout/stderr 没人轮转（曾涨到 20MB），超 5MB 清空重来。
+# launchd 用 O_APPEND 写，清空后继续追加，安全。
+for f in "$LOG/launchd.out.log" "$LOG/launchd.err.log"; do
+  if [ -f "$f" ] && [ "$(stat -f%z "$f" 2>/dev/null || echo 0)" -ge 5242880 ]; then
+    : > "$f"
+  fi
+done
+
 PROXY_INFO="$(bash "$DIR/proxy_detect.sh" 2>/dev/null || echo '{}')"
 PROXY_APP="$(json_get_string "$PROXY_INFO" active_app)"
 PROXY_MODE="$(json_get_string "$PROXY_INFO" active_mode)"
